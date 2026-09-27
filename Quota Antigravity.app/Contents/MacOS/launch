@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# 1. Khởi động Core Proxy Server nếu chưa chạy
+CORE_BIN="$HOME/Library/Application Support/com.cpa.gui/cpa-core/cli-proxy-api"
+CORE_CONF="$HOME/Library/Application Support/com.cpa.gui/cpa-core/config.yaml"
+if ! pgrep -fl "cli-proxy-api" > /dev/null; then
+    if [ -f "$CORE_BIN" ]; then
+        nohup "$CORE_BIN" -config "$CORE_CONF" > /dev/null 2>&1 &
+        sleep 1
+    fi
+fi
+
+# 2. Khởi động Web Dashboard Server (Node.js) nếu chưa chạy
+APP_DIR="/Users/huynhtronghieu/Documents/tinh-nang-ho-tro-antigravity/check-quota"
+if ! lsof -iTCP:5200 -sTCP:LISTEN -P -n > /dev/null 2>&1; then
+    cd "$APP_DIR"
+    NODE_BIN="/opt/homebrew/bin/node"
+    if [ ! -f "$NODE_BIN" ]; then
+        NODE_BIN="$(which node)"
+    fi
+    nohup "$NODE_BIN" server.mjs > /dev/null 2>&1 &
+    sleep 1
+fi
+
+# 3. Mở Dashboard trên trình duyệt
+open "http://localhost:5200"

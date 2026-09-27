@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quản Lý Quota Antigravity | Gemini Models</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --surface: #0f172a;
+      --surface-border: #1e293b;
+      --card-bg: rgba(15, 23, 42, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --emerald: #10b981;
+      --emerald-bg: rgba(16, 185, 129, 0.12);
+      --amber: #f59e0b;
+      --amber-bg: rgba(245, 158, 11, 0.12);
+      --rose: #ef4444;
+      --rose-bg: rgba(239, 68, 68, 0.12);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --radius: 16px;
+      --font: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.1) 0px, transparent 40%),
+        radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.06) 0px, transparent 40%);
+      background-attachment: fixed;
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 20px;
+      width: 100%;
+      flex: 1;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #3b82f6, #06b6d4);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+    }
+
+    .logo-badge svg {
+      width: 24px;
+      height: 24px;
+      fill: #fff;
+    }
+
+    .brand-title h1 {
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.4px;
+    }
+
+    .brand-title p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 16px;
+      border-radius: 10px;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+      outline: none;
+    }
+
+    .btn-primary {
+      background: #3b82f6;
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(59, 130, 246, 0.3);
+    }
+
+    .btn-primary:hover {
+      background: #2563eb;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--surface-border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-icon-danger {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      padding: 6px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .btn-icon-danger:hover {
+      background: var(--rose-bg);
+      color: #f87171;
+    }
+
+    /* Top Summary Bar */
+    .summary-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .summary-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(10px);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .summary-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .summary-val {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .endpoint-box {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--surface-border);
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+
+    .endpoint-box:hover {
+      border-color: #38bdf8;
+    }
+
+    /* Section Header */
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .count-pill {
+      font-size: 11px;
+      background: var(--surface-border);
+      color: var(--text-muted);
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    /* Accounts Grid */
+    .accounts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 18px;
+      margin-bottom: 36px;
+    }
+
+    .account-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+      position: relative;
+    }
+
+    .account-card:hover {
+      border-color: rgba(59, 130, 246, 0.35);
+      transform: translateY(-2px);
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    .user-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #1e293b, #334155);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 15px;
+      color: #60a5fa;
+      flex-shrink: 0;
+    }
+
+    .user-text {
+      overflow: hidden;
+    }
+
+    .user-email {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .user-plan {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* Status Badges */
+    .status-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .badge-ready {
+      background: var(--emerald-bg);
+      color: var(--emerald);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+
+    .badge-exhausted {
+      background: var(--rose-bg);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Primary Gemini Quota Box */
+    .gemini-box {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .gemini-box-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .gemini-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .gemini-percent {
+      font-size: 22px;
+      font-weight: 800;
+      font-family: var(--mono);
+    }
+
+    .p-green { color: var(--emerald); }
+    .p-yellow { color: var(--amber); }
+    .p-red { color: var(--rose); }
+
+    .bar-bg {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+
+    .fill-green { background: linear-gradient(90deg, #10b981, #34d399); }
+    .fill-yellow { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .fill-red { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+    .gemini-reset-info {
+      font-size: 12px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-muted);
+    }
+
+    .reset-warning {
+      color: #f87171;
+      font-weight: 600;
+    }
+
+    /* Weekly Mini Line */
+    .weekly-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-dim);
+      padding: 0 4px;
+    }
+
+    .weekly-val {
+      font-weight: 600;
+      color: var(--text-muted);
+      font-family: var(--mono);
+    }
+
+    /* Extra Collapsible */
+    .extra-toggle {
+      font-size: 11px;
+      color: var(--text-dim);
+      cursor: pointer;
+      text-align: right;
+      user-select: none;
+      transition: color 0.2s;
+    }
+
+    .extra-toggle:hover {
+      color: #60a5fa;
+    }
+
+    .extra-details {
+      display: none;
+      padding-top: 10px;
+      border-top: 1px dashed var(--surface-border);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Empty state */
+    .empty-state {
+      background: var(--card-bg);
+      border: 1px dashed var(--surface-border);
+      border-radius: var(--radius);
+      padding: 50px 20px;
+      text-align: center;
+      grid-column: 1 / -1;
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    .empty-state h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+
+    .empty-state p {
+      font-size: 13px;
+      color: var(--text-muted);
+      max-width: 440px;
+      margin: 0 auto 20px auto;
+      line-height: 1.5;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(59, 130, 246, 0.2);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px auto;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+
+    .modal-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 16px;
+      padding: 28px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1e293b;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      font-size: 13px;
+      display: none;
+      z-index: 200;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <div class="logo-badge">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+          </svg>
+        </div>
+        <div class="brand-title">
+          <h1>Quản Lý Quota Antigravity</h1>
+          <p>Tập trung theo dõi hạn mức Gemini Flash & Gemini Pro</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button class="btn btn-secondary" id="btn-refresh" onclick="loadAllData()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+          </svg>
+          Làm Mới
+        </button>
+
+        <button class="btn btn-primary" onclick="startOAuthLogin()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Thêm Tài Khoản Mới
+        </button>
+      </div>
+    </header>
+
+    <!-- Top Summary -->
+    <div class="summary-bar">
+      <div class="summary-card">
+        <span class="summary-title">Tài Khoản Khuyên Dùng Lúc Này</span>
+        <div class="summary-val" id="stat-best-account" style="font-size: 15px; color: var(--emerald);">
+          Đang tính toán...
+        </div>
+        <span style="font-size: 11px; color: var(--text-dim);" id="stat-best-desc">Tài khoản còn nhiều quota Gemini 5h nhất</span>
+      </div>
+
+      <div class="summary-card">
+        <span class="summary-title">Trạng Thái Pool Tài Khoản</span>
+        <div class="summary-val" id="stat-pool-status">
+          -- / --
+        </div>
+        <span style="font-size: 11px; color: var(--text-dim);">Tự động xoay tua khi gặp lỗi 429</span>
+      </div>
+
+      <div class="summary-card">
+        <span class="summary-title">Cổng API Proxy (OpenAI Format)</span>
+        <div class="endpoint-box" onclick="copyEndpoint()" title="Bấm để sao chép link API">
+          <span id="endpoint-text">http://127.0.0.1:8317/v1</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </div>
+        <span style="font-size: 10px; color: var(--text-dim);">Dùng để dán vào cấu hình Agent/IDE AI</span>
+      </div>
+    </div>
+
+    <!-- Section Title -->
+    <div class="section-header">
+      <div class="section-title">
+        Danh Sách Tài Khoản Gemini
+        <span class="count-pill" id="badge-count">0 tài khoản</span>
+      </div>
+    </div>
+
+    <!-- Accounts Cards -->
+    <div class="accounts-grid" id="accounts-container">
+      <div class="empty-state">
+        <div class="spinner"></div>
+        <h3>Đang nạp dữ liệu từ Google...</h3>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Đăng nhập -->
+  <div class="modal-overlay" id="oauth-modal">
+    <div class="modal-card">
+      <div class="spinner"></div>
+      <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">Đang Mở Google Login</h2>
+      <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin-bottom: 20px;">
+        Vui lòng chọn tài khoản Google Antigravity trong tab trình duyệt vừa mở và nhấn <b>Cho phép</b>.
+      </p>
+      <button class="btn btn-secondary" onclick="closeOAuthModal()">Đã hoàn tất / Đóng</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">Thông báo</div>
+
+  <script>
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.innerText = msg;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 3000);
+    }
+
+    function copyEndpoint() {
+      const text = document.getElementById('endpoint-text').innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('✅ Đã sao chép link API: ' + text);
+      });
+    }
+
+    function formatCountdown(isoTime) {
+      if (!isoTime) return 'Không xác định';
+      const target = new Date(isoTime);
+      const now = new Date();
+      const diffMs = target - now;
+      if (diffMs <= 0) return 'Đã sẵn sàng';
+
+      const mins = Math.floor(diffMs / 60000);
+      const hours = Math.floor(mins / 60);
+      const remMins = mins % 60;
+      if (hours > 0) return `Hồi sau: ${hours}h ${remMins}m`;
+      return `Hồi sau: ${remMins} phút`;
+    }
+
+    async function loadAllData() {
+      const btnRefresh = document.getElementById('btn-refresh');
+      btnRefresh.disabled = true;
+
+      try {
+        const accRes = await fetch('/api/accounts');
+        const accData = await accRes.json();
+        renderAccounts(accData.accounts || []);
+      } catch (err) {
+        showToast('❌ Lỗi kết nối: ' + err.message);
+      } finally {
+        btnRefresh.disabled = false;
+      }
+    }
+
+    function renderAccounts(accounts) {
+      const container = document.getElementById('accounts-container');
+      document.getElementById('badge-count').innerText = `${accounts.length} tài khoản`;
+
+      if (!accounts || accounts.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="8.5" cy="7" r="4"></circle>
+              <line x1="20" y1="8" x2="20" y2="14"></line>
+              <line x1="23" y1="11" x2="17" y2="11"></line>
+            </svg>
+            <h3>Chưa có tài khoản Antigravity nào</h3>
+            <p>Bấm nút "Thêm Tài Khoản Mới" để ủy quyền tài khoản Google có Gemini Pro vào hệ thống.</p>
+            <button class="btn btn-primary" onclick="startOAuthLogin()">➕ Thêm Tài Khoản Ngay</button>
+          </div>
+        `;
+        document.getElementById('stat-best-account').innerText = 'Chưa có tài khoản';
+        document.getElementById('stat-pool-status').innerText = '0 Khả dụng';
+        return;
+      }
+
+      let readyCount = 0;
+      let bestPercent = -1;
+      let bestEmail = '';
+
+      container.innerHTML = accounts.map((acc, idx) => {
+        const initial = acc.email ? acc.email[0].toUpperCase() : 'G';
+        const groups = acc.quota && acc.quota.groups ? acc.quota.groups : [];
+
+        // Tìm nhóm Gemini Models
+        const geminiGroup = groups.find(g => g.name.toLowerCase().includes('gemini')) || groups[0];
+        const buckets = geminiGroup ? geminiGroup.buckets : [];
+
+        // Hạn mức 5 giờ (Quan trọng nhất)
+        const fiveHourBucket = buckets.find(b => b.window === '5h');
+        const fiveHourRem = fiveHourBucket && fiveHourBucket.remainingPercent !== null ? fiveHourBucket.remainingPercent : 0;
+        const fiveHourReset = fiveHourBucket ? formatCountdown(fiveHourBucket.resetTime) : 'N/A';
+
+        // Hạn mức tuần
+        const weeklyBucket = buckets.find(b => b.window === 'weekly');
+        const weeklyRem = weeklyBucket && weeklyBucket.remainingPercent !== null ? weeklyBucket.remainingPercent : 100;
+
+        // Trạng thái tài khoản
+        const isReady = fiveHourRem > 0;
+        if (isReady) readyCount++;
+
+        if (fiveHourRem > bestPercent) {
+          bestPercent = fiveHourRem;
+          bestEmail = acc.email;
+        }
+
+        const pClass = fiveHourRem >= 50 ? 'p-green' : fiveHourRem >= 20 ? 'p-yellow' : 'p-red';
+        const fillClass = fiveHourRem >= 50 ? 'fill-green' : fiveHourRem >= 20 ? 'fill-yellow' : 'fill-red';
+
+        // Nhóm Claude/GPT (ẩn trong accordion)
+        const otherGroup = groups.find(g => !g.name.toLowerCase().includes('gemini'));
+        let otherInfoHtml = '';
+        if (otherGroup && otherGroup.buckets) {
+          otherInfoHtml = otherGroup.buckets.map(b => `${b.label}: ${b.remainingPercent}%`).join(' · ');
+        }
+
+        return `
+          <div class="account-card">
+            <!-- Card Top: Email & Status -->
+            <div class="card-top">
+              <div class="user-info">
+                <div class="user-avatar">${initial}</div>
+                <div class="user-text">
+                  <div class="user-email" title="${acc.email}">${acc.email}</div>
+                  <div class="user-plan">Tài khoản #${idx + 1} · ${acc.plan}</div>
+                </div>
+              </div>
+              
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="status-badge ${isReady ? 'badge-ready' : 'badge-exhausted'}">
+                  <span class="badge-dot"></span>
+                  ${isReady ? 'Khả dụng' : 'Chờ hồi'}
+                </span>
+                <button class="btn-icon-danger" title="Gỡ tài khoản này" onclick="deleteAccount('${acc.name}')">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Gemini 5-Hour Focus Box -->
+            <div class="gemini-box">
+              <div class="gemini-box-header">
+                <span class="gemini-title">
+                  ✨ Gemini Hạn Mức 5 Giờ
+                </span>
+                <span class="gemini-percent ${pClass}">${fiveHourRem}%</span>
+              </div>
+
+              <div class="bar-bg">
+                <div class="bar-fill ${fillClass}" style="width: ${fiveHourRem}%;"></div>
+              </div>
+
+              <div class="gemini-reset-info">
+                <span class="${!isReady ? 'reset-warning' : ''}">
+                  ${!isReady ? '⚠️ Đang cạn · ' + fiveHourReset : '⏱️ ' + fiveHourReset}
+                </span>
+                <span style="font-size: 11px; color: var(--text-dim);">Gemini Pro & Flash</span>
+              </div>
+            </div>
+
+            <!-- Weekly Mini Line -->
+            <div class="weekly-line">
+              <span>Hạn mức tuần:</span>
+              <span class="weekly-val">${weeklyRem}% còn lại</span>
+            </div>
+
+            ${otherInfoHtml ? `
+              <div class="extra-toggle" onclick="toggleExtra('extra-${idx}')">
+                <span>+ Xem hạn mức Claude / GPT</span>
+              </div>
+              <div class="extra-details" id="extra-${idx}">
+                ${otherInfoHtml}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+      // Cập nhật thẻ tổng quan trên cùng
+      document.getElementById('stat-pool-status').innerHTML = `
+        <span style="color: var(--emerald);">${readyCount} Khả dụng</span>
+        <span style="font-size: 13px; color: var(--text-dim);">/ ${accounts.length} tài khoản</span>
+      `;
+
+      if (bestPercent > 0) {
+        document.getElementById('stat-best-account').innerHTML = `
+          <span>🟢 ${bestEmail}</span>
+          <span style="font-size: 12px; font-weight: 800; font-family: var(--mono); background: var(--emerald-bg); color: var(--emerald); padding: 2px 6px; border-radius: 6px;">${bestPercent}%</span>
+        `;
+        document.getElementById('stat-best-desc').innerText = 'Nên sử dụng tài khoản này để code lúc này';
+      } else {
+        document.getElementById('stat-best-account').innerHTML = `
+          <span style="color: var(--rose);">⚠️ Tất cả đều đang cạn 5h</span>
+        `;
+        document.getElementById('stat-best-desc').innerText = 'Vui lòng chờ hồi phục hoặc thêm tài khoản mới';
+      }
+    }
+
+    function toggleExtra(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.style.display = el.style.display === 'block' ? 'none' : 'block';
+      }
+    }
+
+    async function startOAuthLogin() {
+      const modal = document.getElementById('oauth-modal');
+      modal.style.display = 'flex';
+      try {
+        const res = await fetch('/api/login-antigravity', { method: 'POST' });
+        const data = await res.json();
+        if (data.url) {
+          showToast('🚀 Đang mở Google Login trên trình duyệt...');
+        } else {
+          showToast('❌ Không tạo được link: ' + (data.error || 'Lỗi server'));
+        }
+      } catch (err) {
+        showToast('❌ Lỗi: ' + err.message);
+      }
+    }
+
+    function closeOAuthModal() {
+      document.getElementById('oauth-modal').style.display = 'none';
+      setTimeout(loadAllData, 1000);
+    }
+
+    async function deleteAccount(filename) {
+      if (!confirm('Gỡ bỏ tài khoản này khỏi danh sách quản lý?')) return;
+      try {
+        const res = await fetch('/api/account/' + encodeURIComponent(filename), { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('🗑️ Đã gỡ tài khoản.');
+          loadAllData();
+        } else {
+          showToast('❌ Thất bại: ' + data.error);
+        }
+      } catch (e) {
+        showToast('❌ Lỗi: ' + e.message);
+      }
+    }
+
+    loadAllData();
+    setInterval(loadAllData, 30000);
+  </script>
+</body>
+</html>

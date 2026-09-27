@@ -1,0 +1,14 @@
+# Credentials & Tokens
+*.json
+!package.json
+oauth/
+*.key
+*.pem
+
+# Logs & temp
+*.log
+.DS_Store
+*.tmp
+
+# Dependencies
+node_modules/
