@@ -113,35 +113,58 @@ async function fetchQuotaForAccount(file) {
     'User-Agent': 'antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)'
   };
 
-  const payload = {
-    authIndex: String(authIndex),
-    method: 'POST',
-    url: 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
-    header: headers,
-    data: project ? JSON.stringify({ project }) : JSON.stringify({})
-  };
+  // Antigravity IDE sử dụng daily-cloudcode-pa.googleapis.com
+  // Ưu tiên endpoint daily của Antigravity, fallback sang cloudcode-pa tiêu chuẩn
+  const endpoints = [
+    'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+    'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary'
+  ];
 
-  try {
-    const res = await fetch(`http://${PROXY_HOST}:${PROXY_PORT}/v0/management/api-call`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${secretKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(8000)
-    });
+  let lastError = null;
 
-    if (res.ok) {
-      const data = await res.json();
-      return parseAntigravityQuota(data);
-    } else {
-      const text = await res.text();
-      return { status: 'error', error: `Lỗi máy chủ (${res.status}): ${text.slice(0, 100)}` };
+  for (const endpointUrl of endpoints) {
+    const payloadsToTry = [
+      project ? { project } : {},
+      {}
+    ];
+
+    for (const bodyData of payloadsToTry) {
+      const payload = {
+        authIndex: String(authIndex),
+        method: 'POST',
+        url: endpointUrl,
+        header: headers,
+        data: JSON.stringify(bodyData)
+      };
+
+      try {
+        const res = await fetch(`http://${PROXY_HOST}:${PROXY_PORT}/v0/management/api-call`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${secretKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(6000)
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const parsed = parseAntigravityQuota(data);
+          if (parsed.status === 'ok' && parsed.groups && parsed.groups.length > 0) {
+            return parsed;
+          }
+          if (parsed.status === 'error') {
+            lastError = parsed;
+          }
+        }
+      } catch (err) {
+        lastError = { status: 'error', error: err.message };
+      }
     }
-  } catch (err) {
-    return { status: 'error', error: err.message };
   }
+
+  return lastError || { status: 'error', error: 'Không lấy được dữ liệu hạn mức từ Google' };
 }
 
 // Xử lý dữ liệu trả về từ Google Cloud Code Quota
@@ -157,7 +180,35 @@ function parseAntigravityQuota(raw) {
       body = body.body;
     }
 
+    // Kiểm tra lỗi từ Google API
+    if (body.error) {
+      const errMsg = body.error.message || 'Lỗi từ Google API';
+      const reason = body.error.details?.[0]?.reason || '';
+      const validationUrl = body.error.details?.[0]?.metadata?.validation_url || '';
+      return {
+        status: 'error',
+        errorType: reason || 'API_ERROR',
+        error: errMsg,
+        validationUrl
+      };
+    }
+
+    if (raw.status_code && raw.status_code !== 200) {
+      return {
+        status: 'error',
+        error: `Google API trả về mã lỗi ${raw.status_code}`
+      };
+    }
+
     const rawGroups = body.groups || [];
+    if (!rawGroups || rawGroups.length === 0) {
+      return {
+        status: 'warning',
+        error: 'Google không trả về nhóm hạn mức',
+        groups: []
+      };
+    }
+
     const groups = [];
 
     for (const g of rawGroups) {

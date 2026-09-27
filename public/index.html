@@ -142,21 +142,25 @@
     }
 
     .btn-icon-danger {
-      background: transparent;
-      border: none;
-      color: var(--text-dim);
-      padding: 6px;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      color: #f87171;
+      padding: 5px 9px;
       border-radius: 8px;
       cursor: pointer;
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      justify-content: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 600;
       transition: all 0.2s;
     }
 
     .btn-icon-danger:hover {
-      background: var(--rose-bg);
-      color: #f87171;
+      background: rgba(239, 68, 68, 0.25);
+      border-color: rgba(239, 68, 68, 0.5);
+      color: #fff;
+      transform: translateY(-1px);
     }
 
     /* Top Summary Bar */
@@ -338,11 +342,27 @@
       border: 1px solid rgba(239, 68, 68, 0.25);
     }
 
+    .badge-error {
+      background: rgba(244, 63, 94, 0.15);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
     .badge-dot {
       width: 6px;
       height: 6px;
       border-radius: 50%;
       background: currentColor;
+    }
+
+    .gemini-error-box {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px dashed rgba(239, 68, 68, 0.3);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
 
     /* Primary Gemini Quota Box */
@@ -708,37 +728,51 @@
         const initial = acc.email ? acc.email[0].toUpperCase() : 'G';
         const groups = acc.quota && acc.quota.groups ? acc.quota.groups : [];
 
-        // Tìm nhóm Gemini Models
-        const geminiGroup = groups.find(g => g.name.toLowerCase().includes('gemini')) || groups[0];
-        const buckets = geminiGroup ? geminiGroup.buckets : [];
+        const isError = acc.quota && acc.quota.status === 'error';
+        const isValidationRequired = isError && (acc.quota.errorType === 'VALIDATION_REQUIRED' || (acc.quota.error && acc.quota.error.includes('Verify your account')));
 
-        // Hạn mức 5 giờ (Quan trọng nhất)
-        const fiveHourBucket = buckets.find(b => b.window === '5h');
-        const fiveHourRem = fiveHourBucket && fiveHourBucket.remainingPercent !== null ? fiveHourBucket.remainingPercent : 0;
-        const fiveHourReset = fiveHourBucket ? formatCountdown(fiveHourBucket.resetTime) : 'N/A';
+        let isReady = false;
+        let fiveHourRem = 0;
+        let fiveHourReset = 'N/A';
+        let weeklyRem = 100;
+        let otherInfoHtml = '';
 
-        // Hạn mức tuần
-        const weeklyBucket = buckets.find(b => b.window === 'weekly');
-        const weeklyRem = weeklyBucket && weeklyBucket.remainingPercent !== null ? weeklyBucket.remainingPercent : 100;
+        if (!isError) {
+          // Tìm nhóm Gemini Models
+          const geminiGroup = groups.find(g => g.name.toLowerCase().includes('gemini')) || groups[0];
+          const buckets = geminiGroup ? geminiGroup.buckets : [];
 
-        // Trạng thái tài khoản
-        const isReady = fiveHourRem > 0;
-        if (isReady) readyCount++;
+          // Hạn mức 5 giờ (Quan trọng nhất)
+          const fiveHourBucket = buckets.find(b => b.window === '5h');
+          fiveHourRem = fiveHourBucket && fiveHourBucket.remainingPercent !== null ? fiveHourBucket.remainingPercent : 0;
+          fiveHourReset = fiveHourBucket ? formatCountdown(fiveHourBucket.resetTime) : 'N/A';
 
-        if (fiveHourRem > bestPercent) {
-          bestPercent = fiveHourRem;
-          bestEmail = acc.email;
+          // Hạn mức tuần
+          const weeklyBucket = buckets.find(b => b.window === 'weekly');
+          weeklyRem = weeklyBucket && weeklyBucket.remainingPercent !== null ? weeklyBucket.remainingPercent : 100;
+
+          // Trạng thái tài khoản
+          isReady = fiveHourRem > 0;
+          if (isReady) readyCount++;
+
+          if (fiveHourRem > bestPercent) {
+            bestPercent = fiveHourRem;
+            bestEmail = acc.email;
+          }
+
+          // Nhóm Claude/GPT (ẩn trong accordion)
+          const otherGroup = groups.find(g => !g.name.toLowerCase().includes('gemini'));
+          if (otherGroup && otherGroup.buckets) {
+            otherInfoHtml = otherGroup.buckets.map(b => `${b.label}: ${b.remainingPercent}%`).join(' · ');
+          }
         }
 
         const pClass = fiveHourRem >= 50 ? 'p-green' : fiveHourRem >= 20 ? 'p-yellow' : 'p-red';
         const fillClass = fiveHourRem >= 50 ? 'fill-green' : fiveHourRem >= 20 ? 'fill-yellow' : 'fill-red';
 
-        // Nhóm Claude/GPT (ẩn trong accordion)
-        const otherGroup = groups.find(g => !g.name.toLowerCase().includes('gemini'));
-        let otherInfoHtml = '';
-        if (otherGroup && otherGroup.buckets) {
-          otherInfoHtml = otherGroup.buckets.map(b => `${b.label}: ${b.remainingPercent}%`).join(' · ');
-        }
+        const statusBadge = isError 
+          ? `<span class="status-badge badge-error"><span class="badge-dot"></span>${isValidationRequired ? 'Cần Xác Minh' : 'Lỗi Quota'}</span>`
+          : `<span class="status-badge ${isReady ? 'badge-ready' : 'badge-exhausted'}"><span class="badge-dot"></span>${isReady ? 'Khả dụng' : 'Chờ hồi'}</span>`;
 
         return `
           <div class="account-card">
@@ -753,54 +787,80 @@
               </div>
               
               <div style="display: flex; align-items: center; gap: 8px;">
-                <span class="status-badge ${isReady ? 'badge-ready' : 'badge-exhausted'}">
-                  <span class="badge-dot"></span>
-                  ${isReady ? 'Khả dụng' : 'Chờ hồi'}
-                </span>
-                <button class="btn-icon-danger" title="Gỡ tài khoản này" onclick="deleteAccount('${acc.name}')">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                ${statusBadge}
+                <button class="btn-icon-danger" title="Gỡ bỏ tài khoản này" onclick="deleteAccount('${acc.name}', '${acc.email}')">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <polyline points="3 6 5 6 21 6"></polyline>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                   </svg>
+                  <span>Gỡ</span>
                 </button>
               </div>
             </div>
 
-            <!-- Gemini 5-Hour Focus Box -->
-            <div class="gemini-box">
-              <div class="gemini-box-header">
-                <span class="gemini-title">
-                  ✨ Gemini Hạn Mức 5 Giờ
-                </span>
-                <span class="gemini-percent ${pClass}">${fiveHourRem}%</span>
+            ${isError ? `
+              <!-- Hộp cảnh báo lỗi xác thực Google -->
+              <div class="gemini-error-box">
+                <div style="display: flex; align-items: center; gap: 6px; color: #fb7185; font-weight: 700; font-size: 13px;">
+                  <span>⚠️</span>
+                  <span>${isValidationRequired ? 'Google Yêu Cầu Xác Minh Bảo Mật' : 'Không Thể Lấy Hạn Mức'}</span>
+                </div>
+                <p style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+                  ${isValidationRequired 
+                    ? 'Google yêu cầu xác minh tài khoản (Verify your account) hoặc cấp quyền lại.' 
+                    : (acc.quota.error || 'Lỗi không xác định khi kết nối Google')}
+                </p>
+                <div style="display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap;">
+                  ${acc.quota.validationUrl ? `
+                    <a href="${acc.quota.validationUrl}" target="_blank" class="btn btn-secondary" style="font-size: 11px; padding: 6px 12px; text-decoration: none; border-color: rgba(244, 63, 94, 0.4); color: #fda4af;">
+                      🔗 Mở Trang Xác Minh Google
+                    </a>
+                  ` : ''}
+                  <button class="btn btn-secondary" style="font-size: 11px; padding: 6px 12px;" onclick="startOAuthLogin()">
+                    🔄 Đăng Nhập Lại
+                  </button>
+                  <button class="btn btn-secondary" style="font-size: 11px; padding: 6px 12px; border-color: rgba(239, 68, 68, 0.4); color: #f87171;" onclick="deleteAccount('${acc.name}', '${acc.email}')">
+                    🗑️ Gỡ Khỏi Danh Sách
+                  </button>
+                </div>
+              </div>
+            ` : `
+              <!-- Gemini 5-Hour Focus Box -->
+              <div class="gemini-box">
+                <div class="gemini-box-header">
+                  <span class="gemini-title">
+                    ✨ Gemini Hạn Mức 5 Giờ
+                  </span>
+                  <span class="gemini-percent ${pClass}">${fiveHourRem}%</span>
+                </div>
+
+                <div class="bar-bg">
+                  <div class="bar-fill ${fillClass}" style="width: ${fiveHourRem}%;"></div>
+                </div>
+
+                <div class="gemini-reset-info">
+                  <span class="${!isReady ? 'reset-warning' : ''}">
+                    ${!isReady ? '⚠️ Đang cạn · ' + fiveHourReset : '⏱️ ' + fiveHourReset}
+                  </span>
+                  <span style="font-size: 11px; color: var(--text-dim);">Gemini Pro & Flash</span>
+                </div>
               </div>
 
-              <div class="bar-bg">
-                <div class="bar-fill ${fillClass}" style="width: ${fiveHourRem}%;"></div>
+              <!-- Weekly Mini Line -->
+              <div class="weekly-line">
+                <span>Hạn mức tuần:</span>
+                <span class="weekly-val">${weeklyRem}% còn lại</span>
               </div>
 
-              <div class="gemini-reset-info">
-                <span class="${!isReady ? 'reset-warning' : ''}">
-                  ${!isReady ? '⚠️ Đang cạn · ' + fiveHourReset : '⏱️ ' + fiveHourReset}
-                </span>
-                <span style="font-size: 11px; color: var(--text-dim);">Gemini Pro & Flash</span>
-              </div>
-            </div>
-
-            <!-- Weekly Mini Line -->
-            <div class="weekly-line">
-              <span>Hạn mức tuần:</span>
-              <span class="weekly-val">${weeklyRem}% còn lại</span>
-            </div>
-
-            ${otherInfoHtml ? `
-              <div class="extra-toggle" onclick="toggleExtra('extra-${idx}')">
-                <span>+ Xem hạn mức Claude / GPT</span>
-              </div>
-              <div class="extra-details" id="extra-${idx}">
-                ${otherInfoHtml}
-              </div>
-            ` : ''}
+              ${otherInfoHtml ? `
+                <div class="extra-toggle" onclick="toggleExtra('extra-${idx}')">
+                  <span>+ Xem hạn mức Claude / GPT</span>
+                </div>
+                <div class="extra-details" id="extra-${idx}">
+                  ${otherInfoHtml}
+                </div>
+              ` : ''}
+            `}
           </div>
         `;
       }).join('');
@@ -853,16 +913,17 @@
       setTimeout(loadAllData, 1000);
     }
 
-    async function deleteAccount(filename) {
-      if (!confirm('Gỡ bỏ tài khoản này khỏi danh sách quản lý?')) return;
+    async function deleteAccount(filename, email) {
+      const display = email || filename.replace(/^antigravity-|\.json$/g, '');
+      if (!confirm(`Bạn có chắc muốn xóa/gỡ tài khoản "${display}" khỏi danh sách?`)) return;
       try {
         const res = await fetch('/api/account/' + encodeURIComponent(filename), { method: 'DELETE' });
         const data = await res.json();
         if (data.success) {
-          showToast('🗑️ Đã gỡ tài khoản.');
+          showToast(`🗑️ Đã gỡ tài khoản ${display} thành công!`);
           loadAllData();
         } else {
-          showToast('❌ Thất bại: ' + data.error);
+          showToast('❌ Thất bại: ' + (data.error || 'Lỗi server'));
         }
       } catch (e) {
         showToast('❌ Lỗi: ' + e.message);
