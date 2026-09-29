@@ -1,8 +1,20 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { exec, spawn } from 'child_process';
 import os from 'os';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Bắt lỗi không mong muốn để server không bị crash
+process.on('uncaughtException', (err) => {
+  console.error('Lỗi uncaughtException:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Lỗi unhandledRejection:', reason);
+});
 
 const PORT = 5200;
 const PROXY_HOST = '127.0.0.1';
@@ -40,6 +52,7 @@ async function ensureCoreRunning() {
   if (fs.existsSync(CORE_BINARY) && fs.existsSync(CORE_CONFIG)) {
     console.log('🔄 Đang khởi động CLIProxyAPI Core...');
     const child = spawn(CORE_BINARY, ['-config', CORE_CONFIG], {
+      cwd: path.dirname(CORE_BINARY), // Quan trọng: cpa-core để ../oauth tìm đúng vị trí
       detached: true,
       stdio: 'ignore'
     });
@@ -59,7 +72,9 @@ async function getAuthFiles() {
     });
     if (res.ok) {
       const data = await res.json();
-      return data.files || [];
+      if (Array.isArray(data.files) && data.files.length > 0) {
+        return data.files;
+      }
     }
   } catch (e) {
     console.error('Lỗi getAuthFiles:', e.message);
@@ -388,7 +403,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Serve giao diện Frontend Tiếng Việt
-  const publicDir = path.join(process.cwd(), 'public');
+  const publicDir = path.join(__dirname, 'public');
   let filePath = path.join(publicDir, url.pathname === '/' ? 'index.html' : url.pathname);
 
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
