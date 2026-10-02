@@ -47,9 +47,9 @@
     }
 
     .container {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 32px 20px;
+      max-width: 100%;
+      margin: 0;
+      padding: 24px 32px;
       width: 100%;
       flex: 1;
     }
@@ -142,17 +142,18 @@
     }
 
     .btn-icon-danger {
-      background: rgba(239, 68, 68, 0.12);
-      border: 1px solid rgba(239, 68, 68, 0.25);
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
       color: #f87171;
-      padding: 5px 9px;
-      border-radius: 8px;
+      padding: 2px 6px;
+      border-radius: 5px;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      font-size: 11px;
+      gap: 3px;
+      font-size: 10px;
       font-weight: 600;
+      line-height: 1.2;
       transition: all 0.2s;
     }
 
@@ -246,12 +247,24 @@
       border-radius: 10px;
     }
 
-    /* Accounts Grid */
+    /* Accounts Grid - 5 ô một hàng, fullwidth */
     .accounts-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-      gap: 18px;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
       margin-bottom: 36px;
+    }
+
+    @media (max-width: 1400px) {
+      .accounts-grid {
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      }
+    }
+
+    @media (max-width: 600px) {
+      .accounts-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     .account-card {
@@ -259,10 +272,10 @@
       border: 1px solid var(--card-border);
       backdrop-filter: blur(12px);
       border-radius: var(--radius);
-      padding: 20px;
+      padding: 16px;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 12px;
       transition: border-color 0.2s ease, transform 0.2s ease;
       position: relative;
     }
@@ -274,21 +287,14 @@
 
     .card-top {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-    }
-
-    .user-info {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      overflow: hidden;
+      gap: 12px;
     }
 
     .user-avatar {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
+      width: 36px;
+      height: 36px;
+      border-radius: 9px;
       background: linear-gradient(135deg, #1e293b, #334155);
       display: flex;
       align-items: center;
@@ -299,8 +305,17 @@
       flex-shrink: 0;
     }
 
-    .user-text {
-      overflow: hidden;
+    .user-meta {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .user-email-row {
+      width: 100%;
+      min-width: 0;
     }
 
     .user-email {
@@ -310,30 +325,40 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      line-height: 1.3;
     }
 
-    .user-plan {
-      font-size: 11px;
-      color: var(--text-dim);
+    .card-top-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
     }
 
-    /* Status Badges */
+    /* Status Badges - thu nhỏ theo yêu cầu */
     .status-badge {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 6px;
+      padding: 2px 6px;
+      border-radius: 5px;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 4px;
       text-transform: uppercase;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.2px;
+      line-height: 1.2;
     }
 
     .badge-ready {
       background: var(--emerald-bg);
       color: var(--emerald);
       border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+
+    .badge-restricted {
+      background: var(--amber-bg);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.35);
     }
 
     .badge-exhausted {
@@ -349,8 +374,8 @@
     }
 
     .badge-dot {
-      width: 6px;
-      height: 6px;
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
       background: currentColor;
     }
@@ -370,10 +395,10 @@
       background: rgba(0, 0, 0, 0.3);
       border: 1px solid var(--surface-border);
       border-radius: 12px;
-      padding: 16px;
+      padding: 12px 14px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
 
     .gemini-box-header {
@@ -433,20 +458,62 @@
       font-weight: 600;
     }
 
-    /* Weekly Mini Line */
+    /* Weekly Box */
+    .weekly-box {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
     .weekly-line {
       display: flex;
       justify-content: space-between;
       align-items: center;
       font-size: 12px;
-      color: var(--text-dim);
-      padding: 0 4px;
+      color: var(--text-muted);
     }
 
     .weekly-val {
-      font-weight: 600;
-      color: var(--text-muted);
+      font-weight: 700;
       font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .weekly-val.p-green { color: var(--emerald); }
+    .weekly-val.p-yellow { color: var(--amber); }
+    .weekly-val.p-red { color: var(--rose); }
+
+    .weekly-reset-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--text-dim);
+      border-top: 1px dashed rgba(255, 255, 255, 0.06);
+      padding-top: 5px;
+    }
+
+    .weekly-reset-text {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #38bdf8;
+      font-weight: 500;
+    }
+
+    .weekly-warning-badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: var(--amber-bg);
+      color: var(--amber);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      text-transform: uppercase;
     }
 
     /* Extra Collapsible */
@@ -606,7 +673,7 @@
         <div class="summary-val" id="stat-pool-status">
           -- / --
         </div>
-        <span style="font-size: 11px; color: var(--text-dim);">Tự động xoay tua khi gặp lỗi 429</span>
+        <span style="font-size: 11px; color: var(--text-dim);" id="stat-pool-desc">Tự động xoay tua khi gặp lỗi 429</span>
       </div>
 
       <div class="summary-card">
@@ -668,18 +735,28 @@
       });
     }
 
-    function formatCountdown(isoTime) {
-      if (!isoTime) return 'Không xác định';
+    function formatCountdown(isoTime, withPrefix = true) {
+      if (!isoTime) return '';
       const target = new Date(isoTime);
       const now = new Date();
       const diffMs = target - now;
       if (diffMs <= 0) return 'Đã sẵn sàng';
 
-      const mins = Math.floor(diffMs / 60000);
-      const hours = Math.floor(mins / 60);
-      const remMins = mins % 60;
-      if (hours > 0) return `Hồi sau: ${hours}h ${remMins}m`;
-      return `Hồi sau: ${remMins} phút`;
+      const totalMins = Math.floor(diffMs / 60000);
+      const days = Math.floor(totalMins / (60 * 24));
+      const hours = Math.floor((totalMins % (60 * 24)) / 60);
+      const remMins = totalMins % 60;
+
+      let str = '';
+      if (days > 0) {
+        str = `${days} ngày ${hours}h`;
+      } else if (hours > 0) {
+        str = `${hours}h ${remMins}m`;
+      } else {
+        str = `${remMins} phút`;
+      }
+
+      return withPrefix ? `Hồi sau: ${str}` : str;
     }
 
     async function loadAllData() {
@@ -720,21 +797,18 @@
         return;
       }
 
-      let readyCount = 0;
-      let bestPercent = -1;
-      let bestEmail = '';
-
-      container.innerHTML = accounts.map((acc, idx) => {
+      // 1. Tiền xử lý dữ liệu tất cả tài khoản
+      const processedAccounts = accounts.map((acc, idx) => {
         const initial = acc.email ? acc.email[0].toUpperCase() : 'G';
         const groups = acc.quota && acc.quota.groups ? acc.quota.groups : [];
 
         const isError = acc.quota && acc.quota.status === 'error';
         const isValidationRequired = isError && (acc.quota.errorType === 'VALIDATION_REQUIRED' || (acc.quota.error && acc.quota.error.includes('Verify your account')));
 
-        let isReady = false;
         let fiveHourRem = 0;
         let fiveHourReset = 'N/A';
         let weeklyRem = 100;
+        let weeklyReset = '';
         let otherInfoHtml = '';
 
         if (!isError) {
@@ -751,62 +825,106 @@
           const weeklyBucket = buckets.find(b => b.window === 'weekly');
           weeklyRem = weeklyBucket && weeklyBucket.remainingPercent !== null ? weeklyBucket.remainingPercent : 100;
 
-          // Trạng thái tài khoản
-          isReady = fiveHourRem > 0;
-          if (isReady) readyCount++;
-
-          if (fiveHourRem > bestPercent) {
-            bestPercent = fiveHourRem;
-            bestEmail = acc.email;
+          // Thời gian hồi phục hạn mức tuần
+          if (weeklyBucket && weeklyBucket.resetTime) {
+            weeklyReset = formatCountdown(weeklyBucket.resetTime, false);
+          } else if (weeklyBucket && weeklyBucket.description) {
+            const match = weeklyBucket.description.match(/refresh in ([^.]+)/i);
+            if (match) {
+              let text = match[1].trim();
+              text = text.replace(/days?/g, 'ngày')
+                         .replace(/hours?/g, 'h')
+                         .replace(/minutes?/g, 'm')
+                         .replace(/,\s*/g, ' ');
+              weeklyReset = text;
+            }
           }
 
           // Nhóm Claude/GPT (ẩn trong accordion)
           const otherGroup = groups.find(g => !g.name.toLowerCase().includes('gemini'));
           if (otherGroup && otherGroup.buckets) {
-            otherInfoHtml = otherGroup.buckets.map(b => `${b.label}: ${b.remainingPercent}%`).join(' · ');
+            otherInfoHtml = otherGroup.buckets.map(b => {
+              const reset = b.resetTime ? formatCountdown(b.resetTime, false) : '';
+              const rText = (reset && b.remainingPercent < 100 && reset !== 'Đã sẵn sàng') ? ` · Hồi: ${reset}` : '';
+              return `<div><b>${b.label}:</b> ${b.remainingPercent}% còn lại${rText}</div>`;
+            }).join('');
           }
         }
 
+        // Quy tắc: Quota tuần <= 10% bị hạn chế dùng
+        const isWeeklyRestricted = !isError && weeklyRem <= 10;
+        const isFiveHourExhausted = !isError && fiveHourRem === 0;
+        const isReady = !isError && fiveHourRem > 0 && !isWeeklyRestricted;
+
         const pClass = fiveHourRem >= 50 ? 'p-green' : fiveHourRem >= 20 ? 'p-yellow' : 'p-red';
         const fillClass = fiveHourRem >= 50 ? 'fill-green' : fiveHourRem >= 20 ? 'fill-yellow' : 'fill-red';
+        const weeklyPClass = weeklyRem >= 50 ? 'p-green' : weeklyRem > 10 ? 'p-yellow' : 'p-red';
 
-        const statusBadge = isError 
-          ? `<span class="status-badge badge-error"><span class="badge-dot"></span>${isValidationRequired ? 'Cần Xác Minh' : 'Lỗi Quota'}</span>`
-          : `<span class="status-badge ${isReady ? 'badge-ready' : 'badge-exhausted'}"><span class="badge-dot"></span>${isReady ? 'Khả dụng' : 'Chờ hồi'}</span>`;
+        let statusBadge = '';
+        if (isError) {
+          statusBadge = `<span class="status-badge badge-error"><span class="badge-dot"></span>${isValidationRequired ? 'Cần Xác Minh' : 'Lỗi Quota'}</span>`;
+        } else if (isWeeklyRestricted) {
+          statusBadge = `<span class="status-badge badge-restricted"><span class="badge-dot"></span>${weeklyRem <= 0 ? 'Cạn Tuần' : 'Hạn Chế (' + weeklyRem + '%)'}</span>`;
+        } else if (isFiveHourExhausted) {
+          statusBadge = `<span class="status-badge badge-exhausted"><span class="badge-dot"></span>Chờ Hồi (5h)</span>`;
+        } else {
+          statusBadge = `<span class="status-badge badge-ready"><span class="badge-dot"></span>Khả Dụng</span>`;
+        }
 
+        return {
+          ...acc,
+          idx,
+          initial,
+          isError,
+          isValidationRequired,
+          fiveHourRem,
+          fiveHourReset,
+          weeklyRem,
+          weeklyReset,
+          otherInfoHtml,
+          isWeeklyRestricted,
+          isFiveHourExhausted,
+          isReady,
+          pClass,
+          fillClass,
+          weeklyPClass,
+          statusBadge
+        };
+      });
+
+      // 2. Render danh sách tài khoản
+      container.innerHTML = processedAccounts.map(acc => {
         return `
-          <div class="account-card">
-            <!-- Card Top: Email & Status -->
+          <div class="account-card ${acc.isWeeklyRestricted ? 'card-restricted' : ''}">
+            <!-- Card Top: Email + Trạng thái & Gỡ (đã bỏ dòng #X · Gemini Pro) -->
             <div class="card-top">
-              <div class="user-info">
-                <div class="user-avatar">${initial}</div>
-                <div class="user-text">
+              <div class="user-avatar">${acc.initial}</div>
+              <div class="user-meta">
+                <div class="user-email-row">
                   <div class="user-email" title="${acc.email}">${acc.email}</div>
-                  <div class="user-plan">Tài khoản #${idx + 1} · ${acc.plan}</div>
                 </div>
-              </div>
-              
-              <div style="display: flex; align-items: center; gap: 8px;">
-                ${statusBadge}
-                <button class="btn-icon-danger" title="Gỡ bỏ tài khoản này" onclick="deleteAccount('${acc.name}', '${acc.email}')">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
-                  <span>Gỡ</span>
-                </button>
+                <div class="card-top-actions">
+                  ${acc.statusBadge}
+                  <button class="btn-icon-danger" title="Gỡ bỏ tài khoản này" onclick="deleteAccount('${acc.name}', '${acc.email}')">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    <span>Gỡ</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            ${isError ? `
+            ${acc.isError ? `
               <!-- Hộp cảnh báo lỗi xác thực Google -->
               <div class="gemini-error-box">
                 <div style="display: flex; align-items: center; gap: 6px; color: #fb7185; font-weight: 700; font-size: 13px;">
                   <span>⚠️</span>
-                  <span>${isValidationRequired ? 'Google Yêu Cầu Xác Minh Bảo Mật' : 'Không Thể Lấy Hạn Mức'}</span>
+                  <span>${acc.isValidationRequired ? 'Google Yêu Cầu Xác Minh Bảo Mật' : 'Không Thể Lấy Hạn Mức'}</span>
                 </div>
                 <p style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
-                  ${isValidationRequired 
+                  ${acc.isValidationRequired 
                     ? 'Google yêu cầu xác minh tài khoản (Verify your account) hoặc cấp quyền lại.' 
                     : (acc.quota.error || 'Lỗi không xác định khi kết nối Google')}
                 </p>
@@ -825,39 +943,49 @@
                 </div>
               </div>
             ` : `
-              <!-- Gemini 5-Hour Focus Box -->
+              <!-- Gemini Focus Box -->
               <div class="gemini-box">
                 <div class="gemini-box-header">
                   <span class="gemini-title">
-                    ✨ Gemini Hạn Mức 5 Giờ
+                    Hạn mức Gemini
                   </span>
-                  <span class="gemini-percent ${pClass}">${fiveHourRem}%</span>
+                  <span class="gemini-percent ${acc.pClass}">${acc.fiveHourRem}%</span>
                 </div>
 
                 <div class="bar-bg">
-                  <div class="bar-fill ${fillClass}" style="width: ${fiveHourRem}%;"></div>
+                  <div class="bar-fill ${acc.fillClass}" style="width: ${acc.fiveHourRem}%;"></div>
                 </div>
 
                 <div class="gemini-reset-info">
-                  <span class="${!isReady ? 'reset-warning' : ''}">
-                    ${!isReady ? '⚠️ Đang cạn · ' + fiveHourReset : '⏱️ ' + fiveHourReset}
+                  <span class="${!acc.isReady ? 'reset-warning' : ''}">
+                    ${acc.isFiveHourExhausted ? '⚠️ Đang cạn · ' + acc.fiveHourReset : '⏱️ ' + acc.fiveHourReset}
                   </span>
                   <span style="font-size: 11px; color: var(--text-dim);">Gemini Pro & Flash</span>
                 </div>
               </div>
 
-              <!-- Weekly Mini Line -->
-              <div class="weekly-line">
-                <span>Hạn mức tuần:</span>
-                <span class="weekly-val">${weeklyRem}% còn lại</span>
+              <!-- Weekly Quota Box -->
+              <div class="weekly-box">
+                <div class="weekly-line">
+                  <span>Hạn mức tuần:</span>
+                  <span class="weekly-val ${acc.weeklyPClass}">${acc.weeklyRem}% còn lại</span>
+                </div>
+                ${(acc.weeklyRem < 100 && acc.weeklyReset && acc.weeklyReset !== 'Đã sẵn sàng') ? `
+                  <div class="weekly-reset-line">
+                    <span class="weekly-reset-text">⏱️ Hồi sau: <b style="color: #e2e8f0; font-family: var(--mono);">${acc.weeklyReset}</b></span>
+                    ${acc.weeklyRem <= 10 
+                      ? '<span class="weekly-warning-badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.3);">Cạn tuần (≤10%)</span>' 
+                      : (acc.weeklyRem <= 20 ? '<span class="weekly-warning-badge">Sắp cạn tuần</span>' : '')}
+                  </div>
+                ` : ''}
               </div>
 
-              ${otherInfoHtml ? `
-                <div class="extra-toggle" onclick="toggleExtra('extra-${idx}')">
+              ${acc.otherInfoHtml ? `
+                <div class="extra-toggle" onclick="toggleExtra('extra-${acc.idx}')">
                   <span>+ Xem hạn mức Claude / GPT</span>
                 </div>
-                <div class="extra-details" id="extra-${idx}">
-                  ${otherInfoHtml}
+                <div class="extra-details" id="extra-${acc.idx}">
+                  ${acc.otherInfoHtml}
                 </div>
               ` : ''}
             `}
@@ -865,23 +993,70 @@
         `;
       }).join('');
 
-      // Cập nhật thẻ tổng quan trên cùng
+      // 3. Cập nhật thẻ tổng quan: Trạng Thái Pool Tài Khoản
+      const readyCount = processedAccounts.filter(a => a.isReady).length;
+      const restrictedCount = processedAccounts.filter(a => a.isWeeklyRestricted).length;
+
       document.getElementById('stat-pool-status').innerHTML = `
         <span style="color: var(--emerald);">${readyCount} Khả dụng</span>
         <span style="font-size: 13px; color: var(--text-dim);">/ ${accounts.length} tài khoản</span>
       `;
+      const poolDescEl = document.getElementById('stat-pool-desc');
+      if (poolDescEl) {
+        if (restrictedCount > 0) {
+          poolDescEl.innerHTML = `<span style="color: #fbbf24;">⚠️ Có ${restrictedCount} tài khoản bị hạn chế (quota tuần ≤ 10%)</span>`;
+        } else {
+          poolDescEl.innerText = 'Tự động xoay tua khi gặp lỗi 429';
+        }
+      }
 
-      if (bestPercent > 0) {
+      // 4. Tìm Tài Khoản Khuyên Dùng Lúc Này:
+      // Quy tắc: 
+      // - Chỉ chọn tài khoản khả dụng (5h > 0 VÀ quota tuần > 10%)
+      // - Ưu tiên tài khoản còn nhiều Quota Tuần nhất (bảo vệ tài khoản, tránh cạn tuần)
+      // - Nhóm có 5h >= 20% được ưu tiên trước
+      const candidates = processedAccounts.filter(a => a.isReady);
+
+      candidates.sort((a, b) => {
+        // Nhóm có 5h >= 20% được ưu tiên trước
+        const aHealthy5h = a.fiveHourRem >= 20 ? 1 : 0;
+        const bHealthy5h = b.fiveHourRem >= 20 ? 1 : 0;
+        if (bHealthy5h !== aHealthy5h) {
+          return bHealthy5h - aHealthy5h;
+        }
+
+        // Ưu tiên Quota Tuần dồi dào nhất
+        if (b.weeklyRem !== a.weeklyRem) {
+          return b.weeklyRem - a.weeklyRem;
+        }
+
+        // Nếu Quota Tuần bằng nhau, ưu tiên 5h cao hơn
+        return b.fiveHourRem - a.fiveHourRem;
+      });
+
+      if (candidates.length > 0) {
+        const best = candidates[0];
         document.getElementById('stat-best-account').innerHTML = `
-          <span>🟢 ${bestEmail}</span>
-          <span style="font-size: 12px; font-weight: 800; font-family: var(--mono); background: var(--emerald-bg); color: var(--emerald); padding: 2px 6px; border-radius: 6px;">${bestPercent}%</span>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span>🟢 ${best.email}</span>
+            <span style="font-size: 12px; font-weight: 800; font-family: var(--mono); background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 2px 7px; border-radius: 6px;" title="Hạn mức Tuần còn lại">Tuần: ${best.weeklyRem}%</span>
+            <span style="font-size: 12px; font-weight: 800; font-family: var(--mono); background: var(--emerald-bg); color: var(--emerald); border: 1px solid rgba(16, 185, 129, 0.3); padding: 2px 7px; border-radius: 6px;" title="Hạn mức 5 Giờ còn lại">5h: ${best.fiveHourRem}%</span>
+          </div>
         `;
-        document.getElementById('stat-best-desc').innerText = 'Nên sử dụng tài khoản này để code lúc này';
+        document.getElementById('stat-best-desc').innerText = 'Ưu tiên tài khoản dồi dào Quota Tuần (>10%) & còn hạn mức 5h';
       } else {
-        document.getElementById('stat-best-account').innerHTML = `
-          <span style="color: var(--rose);">⚠️ Tất cả đều đang cạn 5h</span>
-        `;
-        document.getElementById('stat-best-desc').innerText = 'Vui lòng chờ hồi phục hoặc thêm tài khoản mới';
+        const anyWeeklyLeft = processedAccounts.some(a => !a.isError && a.weeklyRem > 10);
+        if (!anyWeeklyLeft) {
+          document.getElementById('stat-best-account').innerHTML = `
+            <span style="color: var(--amber);">⚠️ Tất cả tài khoản đều cạn quota tuần (≤10%)</span>
+          `;
+          document.getElementById('stat-best-desc').innerText = 'Hết quota tuần sẽ không thể code, cần thêm tài khoản mới hoặc chờ sang tuần';
+        } else {
+          document.getElementById('stat-best-account').innerHTML = `
+            <span style="color: var(--rose);">⚠️ Tất cả tài khoản khả dụng đều cạn hạn mức 5h</span>
+          `;
+          document.getElementById('stat-best-desc').innerText = 'Vui lòng chờ hồi phục 5h hoặc thêm tài khoản mới';
+        }
       }
     }
 

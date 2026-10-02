@@ -27,7 +27,7 @@ if ! pgrep -fl "cli-proxy-api" > /dev/null; then
     if [ -f "$CORE_BIN" ]; then
         chmod +x "$CORE_BIN" 2>/dev/null
         CORE_DIR="$(dirname "$CORE_BIN")"
-        (cd "$CORE_DIR" && nohup "$CORE_BIN" -config "$CORE_CONF" > "$DIR/proxy-core.log" 2>&1 &)
+        (cd "$CORE_DIR" && nohup "$CORE_BIN" -config "$CORE_CONF" > "$DIR/proxy-core.log" 2>&1 & disown)
         for i in {1..15}; do
             if curl -s http://127.0.0.1:8317/ > /dev/null 2>&1; then
                 break
@@ -63,7 +63,7 @@ fi
 # 4. Khởi động Web Dashboard Server (Node.js) nếu chưa chạy
 if ! lsof -iTCP:5200 -sTCP:LISTEN -P -n > /dev/null 2>&1; then
     echo "🔄 Đang khởi động Web Dashboard Tiếng Việt tại http://localhost:5200..."
-    nohup "$NODE_BIN" server.mjs > "$DIR/server.log" 2>&1 &
+    (cd "$DIR" && nohup "$NODE_BIN" "$DIR/server.mjs" > "$DIR/server.log" 2>&1 & disown)
     
     # Chờ server sẵn sàng lắng nghe trước khi mở trình duyệt
     for i in {1..20}; do
