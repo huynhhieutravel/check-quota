@@ -1,8 +1,9 @@
 import http from 'http';
+import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { exec, spawn } from 'child_process';
+import { exec, spawn, execSync } from 'child_process';
 import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -104,8 +105,91 @@ async function getAuthFiles() {
   return [];
 }
 
+// Lấy Quota trực tiếp thời gian thực từ Antigravity LanguageServer (khớp 100% với IDE)
+let cachedIdeQuota = null;
+let lastIdeQuotaTime = 0;
+
+async function getLiveIdeQuota() {
+  const now = Date.now();
+  if (cachedIdeQuota && (now - lastIdeQuotaTime < 4000)) {
+    return cachedIdeQuota;
+  }
+
+  try {
+    const ps = execSync("ps aux | grep language_server_macos_arm | grep -v grep", { encoding: "utf8" });
+    for (const line of ps.trim().split("\n")) {
+      if (line.includes("--enable_lsp")) continue;
+      const pidMatch = line.trim().match(/^\S+\s+(\d+)/);
+      const csrfMatch = line.match(/--csrf_token\s+([a-f0-9\-]+)/);
+      if (!pidMatch || !csrfMatch) continue;
+
+      const pid = pidMatch[1];
+      const csrf = csrfMatch[1];
+      const lsof = execSync(`lsof -Pan -p ${pid} -i`, { encoding: "utf8" });
+      const ports = [];
+      for (const l of lsof.split("\n")) {
+        const m = l.match(/TCP (?:127\.0\.0\.1|localhost):(\d+) \(LISTEN\)/);
+        if (m && !ports.includes(m[1])) ports.push(m[1]);
+      }
+
+      for (const port of ports) {
+        try {
+          const userStatus = await callLanguageServerRPC(port, csrf, "GetUserStatus");
+          const quotaRes = await callLanguageServerRPC(port, csrf, "RetrieveUserQuotaSummary");
+          if (userStatus?.userStatus?.email && quotaRes?.response?.groups) {
+            const parsed = parseAntigravityQuota({ groups: quotaRes.response.groups });
+            cachedIdeQuota = {
+              email: userStatus.userStatus.email.toLowerCase().trim(),
+              name: userStatus.userStatus.name || '',
+              quota: parsed
+            };
+            lastIdeQuotaTime = now;
+            return cachedIdeQuota;
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (err) {}
+  return null;
+}
+
+function callLanguageServerRPC(port, csrf, method, body = {}) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: "127.0.0.1",
+      port,
+      path: `/exa.language_server_pb.LanguageServerService/${method}`,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-codeium-csrf-token": csrf
+      },
+      rejectUnauthorized: false,
+      timeout: 2000
+    }, (res) => {
+      let data = "";
+      res.on("data", c => data += c);
+      res.on("end", () => {
+        try { resolve(JSON.parse(data)); } catch (e) { resolve(null); }
+      });
+    });
+    req.on("error", reject);
+    req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
 // Truy vấn Quota chi tiết của từng tài khoản Antigravity
 async function fetchQuotaForAccount(file) {
+  // Ưu tiên lấy hạn mức thời gian thực từ LanguageServer nếu tài khoản đang mở trong IDE
+  try {
+    const ideData = await getLiveIdeQuota();
+    const targetEmail = (file.email || file.account || file.name || '').toLowerCase();
+    if (ideData && ideData.email && targetEmail.includes(ideData.email)) {
+      return ideData.quota;
+    }
+  } catch (err) {}
+
   const secretKey = getManagementKey();
   const authIndex = file.auth_index || file.authIndex || file.name;
   let project = file.project_id || file.projectId || file.gemini_virtual_project || '';
@@ -128,14 +212,15 @@ async function fetchQuotaForAccount(file) {
     'User-Agent': 'antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)'
   };
 
-  // Antigravity IDE sử dụng daily-cloudcode-pa.googleapis.com
-  // Ưu tiên endpoint daily của Antigravity, fallback sang cloudcode-pa tiêu chuẩn
+  // Antigravity Quota API: cloudcode-pa.googleapis.com trả về đầy đủ Gemini Models & Claude/GPT
+  // daily-cloudcode-pa.googleapis.com chỉ trả về Claude/GPT, nên ưu tiên cloudcode-pa trước
   const endpoints = [
-    'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
-    'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary'
+    'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+    'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary'
   ];
 
   let lastError = null;
+  let fallbackOkResult = null;
 
   for (const endpointUrl of endpoints) {
     const payloadsToTry = [
@@ -167,7 +252,13 @@ async function fetchQuotaForAccount(file) {
           const data = await res.json();
           const parsed = parseAntigravityQuota(data);
           if (parsed.status === 'ok' && parsed.groups && parsed.groups.length > 0) {
-            return parsed;
+            const hasGemini = parsed.groups.some(g => (g.name || '').toLowerCase().includes('gemini'));
+            if (hasGemini) {
+              return parsed;
+            }
+            if (!fallbackOkResult) {
+              fallbackOkResult = parsed;
+            }
           }
           if (parsed.status === 'error') {
             lastError = parsed;
@@ -179,7 +270,7 @@ async function fetchQuotaForAccount(file) {
     }
   }
 
-  return lastError || { status: 'error', error: 'Không lấy được dữ liệu hạn mức từ Google' };
+  return fallbackOkResult || lastError || { status: 'error', error: 'Không lấy được dữ liệu hạn mức từ Google' };
 }
 
 // Xử lý dữ liệu trả về từ Google Cloud Code Quota
