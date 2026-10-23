@@ -819,11 +819,13 @@
           // Hạn mức 5 giờ (Quan trọng nhất)
           const fiveHourBucket = buckets.find(b => b.window === '5h');
           fiveHourRem = fiveHourBucket && fiveHourBucket.remainingPercent !== null ? fiveHourBucket.remainingPercent : 0;
-          fiveHourReset = fiveHourBucket ? formatCountdown(fiveHourBucket.resetTime) : 'N/A';
+          fiveHourReset = (fiveHourBucket && fiveHourRem < 100 && fiveHourBucket.resetTime) 
+            ? formatCountdown(fiveHourBucket.resetTime) 
+            : 'Sẵn sàng 100%';
 
           // Hạn mức tuần
           const weeklyBucket = buckets.find(b => b.window === 'weekly');
-          weeklyRem = weeklyBucket && weeklyBucket.remainingPercent !== null ? weeklyBucket.remainingPercent : 100;
+          weeklyRem = weeklyBucket && weeklyBucket.remainingPercent !== null ? weeklyBucket.remainingPercent : null;
 
           // Thời gian hồi phục hạn mức tuần
           if (weeklyBucket && weeklyBucket.resetTime) {
@@ -852,13 +854,13 @@
         }
 
         // Quy tắc: Quota tuần <= 10% bị hạn chế dùng
-        const isWeeklyRestricted = !isError && weeklyRem <= 10;
+        const isWeeklyRestricted = !isError && weeklyRem !== null && weeklyRem <= 10;
         const isFiveHourExhausted = !isError && fiveHourRem === 0;
         const isReady = !isError && fiveHourRem > 0 && !isWeeklyRestricted;
 
         const pClass = fiveHourRem >= 50 ? 'p-green' : fiveHourRem >= 20 ? 'p-yellow' : 'p-red';
         const fillClass = fiveHourRem >= 50 ? 'fill-green' : fiveHourRem >= 20 ? 'fill-yellow' : 'fill-red';
-        const weeklyPClass = weeklyRem >= 50 ? 'p-green' : weeklyRem > 10 ? 'p-yellow' : 'p-red';
+        const weeklyPClass = weeklyRem === null ? '' : (weeklyRem >= 50 ? 'p-green' : weeklyRem > 10 ? 'p-yellow' : 'p-red');
 
         let statusBadge = '';
         if (isError) {
@@ -968,9 +970,9 @@
               <div class="weekly-box">
                 <div class="weekly-line">
                   <span>Hạn mức tuần:</span>
-                  <span class="weekly-val ${acc.weeklyPClass}">${acc.weeklyRem}% còn lại</span>
+                  <span class="weekly-val ${acc.weeklyPClass}">${acc.weeklyRem !== null ? acc.weeklyRem + '% còn lại' : 'Chưa đồng bộ'}</span>
                 </div>
-                ${(acc.weeklyRem < 100 && acc.weeklyReset && acc.weeklyReset !== 'Đã sẵn sàng') ? `
+                ${(acc.weeklyRem !== null && acc.weeklyRem < 100 && acc.weeklyReset && acc.weeklyReset !== 'Đã sẵn sàng') ? `
                   <div class="weekly-reset-line">
                     <span class="weekly-reset-text">⏱️ Hồi sau: <b style="color: #e2e8f0; font-family: var(--mono);">${acc.weeklyReset}</b></span>
                     ${acc.weeklyRem <= 10 
@@ -1026,8 +1028,10 @@
         }
 
         // Ưu tiên Quota Tuần dồi dào nhất
-        if (b.weeklyRem !== a.weeklyRem) {
-          return b.weeklyRem - a.weeklyRem;
+        const aWeekly = a.weeklyRem !== null ? a.weeklyRem : 0;
+        const bWeekly = b.weeklyRem !== null ? b.weeklyRem : 0;
+        if (bWeekly !== aWeekly) {
+          return bWeekly - aWeekly;
         }
 
         // Nếu Quota Tuần bằng nhau, ưu tiên 5h cao hơn
@@ -1036,16 +1040,19 @@
 
       if (candidates.length > 0) {
         const best = candidates[0];
+        const weeklyBadge = best.weeklyRem !== null 
+          ? `<span style="font-size: 12px; font-weight: 800; font-family: var(--mono); background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 2px 7px; border-radius: 6px;" title="Hạn mức Tuần còn lại">Tuần: ${best.weeklyRem}%</span>`
+          : '';
         document.getElementById('stat-best-account').innerHTML = `
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <span>🟢 ${best.email}</span>
-            <span style="font-size: 12px; font-weight: 800; font-family: var(--mono); background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 2px 7px; border-radius: 6px;" title="Hạn mức Tuần còn lại">Tuần: ${best.weeklyRem}%</span>
+            ${weeklyBadge}
             <span style="font-size: 12px; font-weight: 800; font-family: var(--mono); background: var(--emerald-bg); color: var(--emerald); border: 1px solid rgba(16, 185, 129, 0.3); padding: 2px 7px; border-radius: 6px;" title="Hạn mức 5 Giờ còn lại">5h: ${best.fiveHourRem}%</span>
           </div>
         `;
         document.getElementById('stat-best-desc').innerText = 'Ưu tiên tài khoản dồi dào Quota Tuần (>10%) & còn hạn mức 5h';
       } else {
-        const anyWeeklyLeft = processedAccounts.some(a => !a.isError && a.weeklyRem > 10);
+        const anyWeeklyLeft = processedAccounts.some(a => !a.isError && (a.weeklyRem === null || a.weeklyRem > 10));
         if (!anyWeeklyLeft) {
           document.getElementById('stat-best-account').innerHTML = `
             <span style="color: var(--amber);">⚠️ Tất cả tài khoản đều cạn quota tuần (≤10%)</span>

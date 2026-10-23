@@ -60,19 +60,25 @@ if [ -z "$NODE_BIN" ]; then
     exit 1
 fi
 
-# 4. Khởi động Web Dashboard Server (Node.js) nếu chưa chạy
-if ! lsof -iTCP:5200 -sTCP:LISTEN -P -n > /dev/null 2>&1; then
-    echo "🔄 Đang khởi động Web Dashboard Tiếng Việt tại http://localhost:5200..."
-    (cd "$DIR" && nohup "$NODE_BIN" "$DIR/server.mjs" > "$DIR/server.log" 2>&1 & disown)
-    
-    # Chờ server sẵn sàng lắng nghe trước khi mở trình duyệt
-    for i in {1..20}; do
-        if curl -s -I http://127.0.0.1:5200/ > /dev/null 2>&1; then
-            break
-        fi
-        sleep 0.2
-    done
+# 4. Khởi động Web Dashboard Server (Node.js) - đảm bảo tải bản mới nhất
+pkill -9 -f "node.*server\.mjs" 2>/dev/null || true
+OLD_PIDS=$(lsof -tiTCP:5200 -sTCP:LISTEN 2>/dev/null || true)
+if [ -n "$OLD_PIDS" ]; then
+    echo "🔄 Làm mới Web Dashboard Server (dừng PIDs cũ: $OLD_PIDS)..."
+    echo "$OLD_PIDS" | xargs kill -9 2>/dev/null || true
+    sleep 0.5
 fi
+
+echo "🔄 Đang khởi động Web Dashboard Tiếng Việt tại http://localhost:5200..."
+(cd "$DIR" && nohup "$NODE_BIN" "$DIR/server.mjs" < /dev/null > "$DIR/server.log" 2>&1 & disown)
+
+# Chờ server sẵn sàng lắng nghe trước khi mở trình duyệt
+for i in {1..25}; do
+    if curl -s -I http://127.0.0.1:5200/ > /dev/null 2>&1; then
+        break
+    fi
+    sleep 0.2
+done
 
 # 5. Mở trình duyệt web
 echo "✅ Đang mở Dashboard trên trình duyệt..."

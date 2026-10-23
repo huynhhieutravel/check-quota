@@ -9,12 +9,24 @@ import os from 'os';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Bắt lỗi không mong muốn để server không bị crash
+// Bắt lỗi không mong muốn để server không bị crash vô cớ
 process.on('uncaughtException', (err) => {
   console.error('Lỗi uncaughtException:', err);
+  if (err.code === 'EADDRINUSE') {
+    process.exit(1);
+  }
 });
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Lỗi unhandledRejection:', reason);
+process.on('SIGTERM', () => {
+  console.log('Nhận tín hiệu SIGTERM - tiến trình đang được yêu cầu dừng');
+});
+process.on('SIGINT', () => {
+  console.log('Nhận tín hiệu SIGINT');
+});
+process.on('SIGHUP', () => {
+  console.log('Nhận tín hiệu SIGHUP - terminal đóng, bỏ qua để tiếp tục chạy');
+});
+process.on('exit', (code) => {
+  console.log('Tiến trình server.mjs thoát với mã:', code);
 });
 
 const PORT = 5200;
@@ -27,6 +39,34 @@ const CONFIG_TOML_PATH = path.join(CPA_APP_DATA, 'config.toml');
 const OAUTH_DIR = path.join(CPA_APP_DATA, 'oauth');
 const CORE_BINARY = path.join(CPA_APP_DATA, 'cpa-core', 'cli-proxy-api');
 const CORE_CONFIG = path.join(CPA_APP_DATA, 'cpa-core', 'config.yaml');
+const SNAPSHOT_FILE = path.join(__dirname, 'quota-snapshot.json');
+
+// Đọc Quota Snapshot bền vững từ đĩa
+function loadSnapshots() {
+  try {
+    if (fs.existsSync(SNAPSHOT_FILE)) {
+      return JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf8'));
+    }
+  } catch (e) {}
+  return {};
+}
+
+// Cập nhật Snapshot cho tài khoản
+function updateSnapshot(email, data) {
+  if (!email) return;
+  const key = email.toLowerCase().trim();
+  const all = loadSnapshots();
+  all[key] = {
+    ...(all[key] || {}),
+    ...data,
+    updatedAt: new Date().toISOString()
+  };
+  try {
+    fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify(all, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Lỗi lưu quota snapshot:', e.message);
+  }
+}
 
 // Đọc management secret key từ config.toml
 function getManagementKey() {
@@ -105,52 +145,76 @@ async function getAuthFiles() {
   return [];
 }
 
-// Lấy Quota trực tiếp thời gian thực từ Antigravity LanguageServer (khớp 100% với IDE)
-let cachedIdeQuota = null;
+// Lấy Quota trực tiếp thời gian thực từ TẤT CẢ các workspace Antigravity LanguageServer đang chạy trên máy
+let cachedIdeQuotas = new Map();
 let lastIdeQuotaTime = 0;
 
-async function getLiveIdeQuota() {
+async function getLiveIdeQuotas() {
   const now = Date.now();
-  if (cachedIdeQuota && (now - lastIdeQuotaTime < 4000)) {
-    return cachedIdeQuota;
+  if (cachedIdeQuotas.size > 0 && (now - lastIdeQuotaTime < 3000)) {
+    return cachedIdeQuotas;
   }
 
+  const freshMap = new Map();
   try {
     const ps = execSync("ps aux | grep language_server_macos_arm | grep -v grep", { encoding: "utf8" });
     for (const line of ps.trim().split("\n")) {
-      if (line.includes("--enable_lsp")) continue;
       const pidMatch = line.trim().match(/^\S+\s+(\d+)/);
       const csrfMatch = line.match(/--csrf_token\s+([a-f0-9\-]+)/);
       if (!pidMatch || !csrfMatch) continue;
 
       const pid = pidMatch[1];
       const csrf = csrfMatch[1];
-      const lsof = execSync(`lsof -Pan -p ${pid} -i`, { encoding: "utf8" });
-      const ports = [];
-      for (const l of lsof.split("\n")) {
-        const m = l.match(/TCP (?:127\.0\.0\.1|localhost):(\d+) \(LISTEN\)/);
-        if (m && !ports.includes(m[1])) ports.push(m[1]);
+
+      // Tối ưu: Nếu có cờ --https_server_port, ưu tiên kết nối thẳng không cần lsof
+      const httpsPortMatch = line.match(/--https_server_port\s+(\d+)/);
+      let ports = [];
+      if (httpsPortMatch) {
+        ports.push(httpsPortMatch[1]);
+      } else {
+        // Fallback lsof chỉ khi không tìm thấy cờ
+        try {
+          const lsof = execSync(`lsof -Pan -p ${pid} -i`, { encoding: "utf8" });
+          for (const l of lsof.split("\n")) {
+            const m = l.match(/TCP (?:127\.0\.0\.1|localhost):(\d+) \(LISTEN\)/);
+            if (m && !ports.includes(m[1])) ports.push(m[1]);
+          }
+        } catch { continue; }
       }
 
       for (const port of ports) {
         try {
           const userStatus = await callLanguageServerRPC(port, csrf, "GetUserStatus");
+          const email = userStatus?.userStatus?.email?.toLowerCase()?.trim();
+          if (!email) continue;
+
           const quotaRes = await callLanguageServerRPC(port, csrf, "RetrieveUserQuotaSummary");
-          if (userStatus?.userStatus?.email && quotaRes?.response?.groups) {
+          if (quotaRes?.response?.groups && quotaRes.response.groups.length > 0) {
             const parsed = parseAntigravityQuota({ groups: quotaRes.response.groups });
-            cachedIdeQuota = {
-              email: userStatus.userStatus.email.toLowerCase().trim(),
-              name: userStatus.userStatus.name || '',
-              quota: parsed
-            };
-            lastIdeQuotaTime = now;
-            return cachedIdeQuota;
+            if (parsed.status === 'ok') {
+              freshMap.set(email, parsed);
+
+              // Tự động lưu tuần vào Snapshot bền vững để không bị mất khi IDE đóng
+              const geminiGroup = parsed.groups.find(g => (g.name || '').toLowerCase().includes('gemini'));
+              const weeklyBucket = geminiGroup?.buckets?.find(b => b.window === 'weekly');
+              if (weeklyBucket && weeklyBucket.remainingPercent !== null) {
+                updateSnapshot(email, {
+                  weeklyRem: weeklyBucket.remainingPercent,
+                  weeklyReset: weeklyBucket.resetTime || null,
+                  weeklyDesc: weeklyBucket.description || ''
+                });
+              }
+            }
           }
         } catch (e) {}
       }
     }
+    if (freshMap.size > 0) {
+      cachedIdeQuotas = freshMap;
+      lastIdeQuotaTime = now;
+    }
   } catch (err) {}
-  return null;
+  return cachedIdeQuotas;
 }
 
 function callLanguageServerRPC(port, csrf, method, body = {}) {
@@ -165,7 +229,7 @@ function callLanguageServerRPC(port, csrf, method, body = {}) {
         "x-codeium-csrf-token": csrf
       },
       rejectUnauthorized: false,
-      timeout: 2000
+      timeout: 1500
     }, (res) => {
       let data = "";
       res.on("data", c => data += c);
@@ -179,98 +243,252 @@ function callLanguageServerRPC(port, csrf, method, body = {}) {
   });
 }
 
+function getGoogleClientCredentials() {
+  const credPath = path.join(__dirname, 'antigravity-client.json');
+  if (fs.existsSync(credPath)) {
+    try {
+      return JSON.parse(fs.readFileSync(credPath, 'utf8'));
+    } catch {}
+  }
+  return {
+    client_id: process.env.ANTIGRAVITY_CLIENT_ID || '',
+    client_secret: process.env.ANTIGRAVITY_CLIENT_SECRET || ''
+  };
+}
+
+// Tự động làm mới OAuth Token khi cần
+async function refreshOAuthToken(content, filePath) {
+  if (!content.refresh_token) return content.access_token;
+  const creds = getGoogleClientCredentials();
+  if (!creds.client_id || !creds.client_secret) return content.access_token;
+
+  return new Promise((resolve) => {
+    const postData = new URLSearchParams({
+      client_id: creds.client_id,
+      client_secret: creds.client_secret,
+      refresh_token: content.refresh_token,
+      grant_type: 'refresh_token'
+    }).toString();
+
+    const req = https.request('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData)
+      },
+      timeout: 5000
+    }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try {
+          const j = JSON.parse(d);
+          if (j.access_token) {
+            content.access_token = j.access_token;
+            content.timestamp = Date.now();
+            try { fs.writeFileSync(filePath, JSON.stringify(content, null, 2)); } catch {}
+            resolve(j.access_token);
+            return;
+          }
+        } catch {}
+        resolve(content.access_token);
+      });
+    });
+    req.on('error', () => resolve(content.access_token));
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Lấy Quota trực tiếp từ Google Antigravity Internal Backend (daily-cloudcode-pa)
+async function fetchDailyQuotaDirect(file) {
+  const filePath = path.join(OAUTH_DIR, file.name);
+  if (!fs.existsSync(filePath)) return null;
+
+  let content = {};
+  try { content = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return null; }
+
+  let token = content.access_token;
+  if (!token) return null;
+  const email = (content.email || content.account || file.name.replace(/^antigravity-|\.json$/g, '')).toLowerCase().trim();
+
+  const makeReq = (url, bearerToken) => new Promise(resolve => {
+    const u = new URL(url);
+    const req = https.request({
+      hostname: u.hostname,
+      path: u.pathname,
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + bearerToken,
+        'Content-Type': 'application/json',
+        'User-Agent': 'antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)'
+      },
+      timeout: 5000
+    }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, data: JSON.parse(d) }); } catch(e) { resolve({ status: res.statusCode, data: null }); }
+      });
+    });
+    req.on('error', () => resolve({ status: 500, data: null }));
+    req.write('{}');
+    req.end();
+  });
+
+  let quotaRes = await makeReq('https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota', token);
+  if (quotaRes.status === 401 && content.refresh_token) {
+    token = await refreshOAuthToken(content, filePath);
+    quotaRes = await makeReq('https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota', token);
+  }
+
+  if (!quotaRes.data || !quotaRes.data.buckets) return null;
+
+  const summaryRes = await makeReq('https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary', token);
+
+  const geminiBucket = quotaRes.data.buckets.find(b => b.modelId?.includes('gemini-2.5-pro') || b.modelId?.includes('gemini-3.8') || b.modelId?.includes('gemini-2.5-flash'));
+
+  const snapshots = loadSnapshots();
+  const existingSnapshot = snapshots[email] || {};
+
+  let weeklyRem = existingSnapshot.weeklyRem !== undefined ? existingSnapshot.weeklyRem : null;
+  let weeklyReset = existingSnapshot.weeklyReset || null;
+  let weeklyDesc = existingSnapshot.weeklyDesc || '';
+  let fiveHourRem = 100;
+  let fiveHourReset = null;
+
+  if (geminiBucket) {
+    const fraction = geminiBucket.remainingFraction !== undefined ? geminiBucket.remainingFraction : 1;
+    const resetTime = geminiBucket.resetTime;
+    const diffHours = resetTime ? (new Date(resetTime) - Date.now()) / 3600000 : 0;
+
+    if (diffHours > 6) {
+      // Hạn mức tuần vì thời gian hồi > 6 giờ (lên tới 7 ngày)
+      weeklyRem = Math.round(fraction * 100);
+      weeklyReset = resetTime;
+      fiveHourRem = 100;
+      fiveHourReset = null;
+      updateSnapshot(email, { weeklyRem, weeklyReset });
+    } else {
+      // Hạn mức 5 giờ đang tiêu tốn hoặc đang hồi
+      fiveHourRem = Math.round(fraction * 100);
+      fiveHourReset = resetTime;
+      // QUAN TRỌNG: Giữ nguyên weeklyRem từ Snapshot, TUYỆT ĐỐI không ép về 100%!
+    }
+  }
+
+  const geminiBuckets = [
+    {
+      bucketId: 'gemini-5h',
+      label: 'Hạn Mức 5 Giờ',
+      window: '5h',
+      remainingPercent: fiveHourRem,
+      usedPercent: 100 - fiveHourRem,
+      resetTime: fiveHourReset,
+      description: fiveHourReset ? 'Hồi phục hạn mức 5 giờ' : ''
+    },
+    {
+      bucketId: 'gemini-weekly',
+      label: 'Hạn Mức Hàng Tuần',
+      window: 'weekly',
+      remainingPercent: weeklyRem,
+      usedPercent: weeklyRem !== null ? 100 - weeklyRem : null,
+      resetTime: weeklyReset,
+      description: weeklyReset ? (weeklyDesc || 'Hồi phục hạn mức tuần') : ''
+    }
+  ];
+
+  const groups = [
+    {
+      name: 'Gemini Models',
+      description: 'Models within this group: Gemini Flash, Gemini Pro',
+      buckets: geminiBuckets
+    }
+  ];
+
+  if (summaryRes.data?.groups) {
+    for (const g of summaryRes.data.groups) {
+      if (!g.displayName?.toLowerCase().includes('gemini')) {
+        const rawBuckets = g.buckets || [];
+        const buckets = rawBuckets.map(b => ({
+          bucketId: b.bucketId || b.window,
+          label: b.displayName || b.window,
+          window: b.window,
+          remainingPercent: b.remainingFraction !== undefined ? Math.round(Number(b.remainingFraction) * 100) : 100,
+          usedPercent: b.remainingFraction !== undefined ? 100 - Math.round(Number(b.remainingFraction) * 100) : 0,
+          resetTime: b.resetTime || null
+        }));
+        groups.push({
+          name: g.displayName || 'Claude and GPT models',
+          description: g.description || '',
+          buckets
+        });
+      }
+    }
+  }
+
+  return { status: 'ok', groups };
+}
+
 // Truy vấn Quota chi tiết của từng tài khoản Antigravity
-async function fetchQuotaForAccount(file) {
-  // Ưu tiên lấy hạn mức thời gian thực từ LanguageServer nếu tài khoản đang mở trong IDE
+async function fetchQuotaForAccount(file, liveMap = null) {
+  const targetEmail = (file.email || file.account || file.name || '').toLowerCase().trim();
+
+  // 1. Ưu tiên số 1: Hạn mức từ Antigravity LanguageServer đang chạy trên máy (khớp 100% tất cả workspace IDE)
   try {
-    const ideData = await getLiveIdeQuota();
-    const targetEmail = (file.email || file.account || file.name || '').toLowerCase();
-    if (ideData && ideData.email && targetEmail.includes(ideData.email)) {
-      return ideData.quota;
+    const map = liveMap || await getLiveIdeQuotas();
+    for (const [ideEmail, ideQuota] of map) {
+      if (targetEmail.includes(ideEmail) || ideEmail.includes(targetEmail.replace(/^antigravity-|\.json$/g, ''))) {
+        return ideQuota;
+      }
     }
   } catch (err) {}
 
-  const secretKey = getManagementKey();
-  const authIndex = file.auth_index || file.authIndex || file.name;
-  let project = file.project_id || file.projectId || file.gemini_virtual_project || '';
+  // 2. Ưu tiên số 2: Gọi trực tiếp Google Antigravity Internal API (daily-cloudcode-pa) cho tài khoản offline
+  try {
+    const dailyQuota = await fetchDailyQuotaDirect(file);
+    if (dailyQuota && dailyQuota.status === 'ok' && dailyQuota.groups && dailyQuota.groups.length > 0) {
+      return dailyQuota;
+    }
+  } catch (err) {}
 
-  // Nếu chưa có project_id trong metadata, đọc trực tiếp file
-  if (!project && file.name) {
-    const filePath = path.join(OAUTH_DIR, file.name);
-    try {
-      if (fs.existsSync(filePath)) {
-        const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        project = content.project_id || content.projectId || content.gemini_virtual_project || (content.installed && content.installed.project_id) || '';
-      }
-    } catch {}
+  // 3. Fallback: Proxy core api-call
+  const secretKey = getManagementKey();
+  const authIndex = file.auth_index || file.authIndex;
+  if (!authIndex) {
+    return { status: 'error', error: 'Không tìm thấy thông tin xác thực' };
   }
 
-  // Header chuẩn của Antigravity CLI
-  const headers = {
-    'Authorization': 'Bearer $TOKEN$',
-    'Content-Type': 'application/json',
-    'User-Agent': 'antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)'
+  const payload = {
+    authIndex: String(authIndex),
+    method: 'POST',
+    url: 'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota',
+    header: {
+      'Authorization': 'Bearer $TOKEN$',
+      'Content-Type': 'application/json',
+      'User-Agent': 'antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)'
+    },
+    data: '{}'
   };
 
-  // Antigravity Quota API: cloudcode-pa.googleapis.com trả về đầy đủ Gemini Models & Claude/GPT
-  // daily-cloudcode-pa.googleapis.com chỉ trả về Claude/GPT, nên ưu tiên cloudcode-pa trước
-  const endpoints = [
-    'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
-    'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary'
-  ];
+  try {
+    const res = await fetch(`http://${PROXY_HOST}:${PROXY_PORT}/v0/management/api-call`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${secretKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(6000)
+    });
 
-  let lastError = null;
-  let fallbackOkResult = null;
-
-  for (const endpointUrl of endpoints) {
-    const payloadsToTry = [
-      project ? { project } : {},
-      {}
-    ];
-
-    for (const bodyData of payloadsToTry) {
-      const payload = {
-        authIndex: String(authIndex),
-        method: 'POST',
-        url: endpointUrl,
-        header: headers,
-        data: JSON.stringify(bodyData)
-      };
-
-      try {
-        const res = await fetch(`http://${PROXY_HOST}:${PROXY_PORT}/v0/management/api-call`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${secretKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(6000)
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const parsed = parseAntigravityQuota(data);
-          if (parsed.status === 'ok' && parsed.groups && parsed.groups.length > 0) {
-            const hasGemini = parsed.groups.some(g => (g.name || '').toLowerCase().includes('gemini'));
-            if (hasGemini) {
-              return parsed;
-            }
-            if (!fallbackOkResult) {
-              fallbackOkResult = parsed;
-            }
-          }
-          if (parsed.status === 'error') {
-            lastError = parsed;
-          }
-        }
-      } catch (err) {
-        lastError = { status: 'error', error: err.message };
-      }
+    if (res.ok) {
+      const data = await res.json();
+      return parseAntigravityQuota(data);
     }
-  }
+  } catch (err) {}
 
-  return fallbackOkResult || lastError || { status: 'error', error: 'Không lấy được dữ liệu hạn mức từ Google' };
+  return { status: 'error', error: 'Không lấy được dữ liệu hạn mức từ Google' };
 }
 
 // Xử lý dữ liệu trả về từ Google Cloud Code Quota
@@ -404,9 +622,8 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/accounts') {
     await ensureCoreRunning();
     const authFiles = await getAuthFiles();
-    const accounts = [];
-
-    for (const f of authFiles) {
+    const liveMap = await getLiveIdeQuotas();
+    const accounts = await Promise.all(authFiles.map(async (f) => {
       const isAntigravity = (f.provider || f.type || f.name || '').toLowerCase().includes('antigravity');
       let quotaData = { status: 'loading' };
 
@@ -425,10 +642,10 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (isAntigravity) {
-        quotaData = await fetchQuotaForAccount(f);
+        quotaData = await fetchQuotaForAccount(f, liveMap);
       }
 
-      accounts.push({
+      return {
         name: f.name,
         email: email || f.name.replace(/\.json$/, ''),
         provider: f.provider || 'antigravity',
@@ -436,8 +653,8 @@ const server = http.createServer(async (req, res) => {
         projectId,
         updatedAt: f.updated_at || null,
         quota: quotaData
-      });
-    }
+      };
+    }));
 
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ accounts }));
@@ -514,7 +731,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', async () => {
-  console.log(`🚀 Dashboard Quota Antigravity (Tiếng Việt) đang chạy tại: http://127.0.0.1:${PORT}`);
+server.listen(PORT, async () => {
+  console.log(`🚀 Dashboard Quota Antigravity (Tiếng Việt) đang chạy tại: http://localhost:${PORT} và http://127.0.0.1:${PORT}`);
   await ensureCoreRunning();
 });
