@@ -1,6 +1,6 @@
 # Quota Antigravity Dashboard
 
-Hệ thống giám sát, đồng bộ hạn mức và điều phối luồng tài khoản Google Gemini / Claude cho Antigravity IDE qua proxy core.
+Hệ thống giám sát, đồng bộ hạn mức và điều phối luồng tài khoản Google Antigravity, OpenAI Codex & xAI Grok qua proxy core.
 
 ## Language
 

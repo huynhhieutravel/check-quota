@@ -40,12 +40,30 @@ const OAUTH_DIR = path.join(CPA_APP_DATA, 'oauth');
 const CORE_BINARY = path.join(CPA_APP_DATA, 'cpa-core', 'cli-proxy-api');
 const CORE_CONFIG = path.join(CPA_APP_DATA, 'cpa-core', 'config.yaml');
 const SNAPSHOT_FILE = path.join(__dirname, 'quota-snapshot.json');
+let activeXaiProcess = null;
 
-// Đọc Quota Snapshot bền vững từ đĩa
+// Đọc Quota Snapshot bền vững từ đĩa (tự động hồi phục 100% nếu mốc reset tuần đã trôi qua)
 function loadSnapshots() {
   try {
     if (fs.existsSync(SNAPSHOT_FILE)) {
-      return JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf8'));
+      const data = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf8'));
+      let modified = false;
+      const now = new Date();
+      for (const email of Object.keys(data)) {
+        const item = data[email];
+        // Nếu đã qua mốc thời gian hồi phục tuần của Google, hạn mức đã được phục hồi 100%
+        if (item && item.weeklyReset && new Date(item.weeklyReset) <= now) {
+          item.weeklyRem = 100;
+          item.weeklyReset = null;
+          item.weeklyDesc = 'Đã sẵn sàng 100%';
+          item.updatedAt = now.toISOString();
+          modified = true;
+        }
+      }
+      if (modified) {
+        try { fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify(data, null, 2), 'utf8'); } catch (e) {}
+      }
+      return data;
     }
   } catch (e) {}
   return {};
@@ -103,8 +121,65 @@ async function ensureCoreRunning() {
   return true;
 }
 
+// Tự động nhận diện tài khoản Codex từ ~/.codex/auth.json nếu chưa có trong oauth dir
+function syncExistingCodexAuth() {
+  try {
+    const codexAuthPath = path.join(HOME_DIR, '.codex', 'auth.json');
+    if (!fs.existsSync(codexAuthPath)) return;
+    const data = JSON.parse(fs.readFileSync(codexAuthPath, 'utf8'));
+    const tokens = data.tokens || {};
+    const idToken = tokens.id_token || '';
+    if (!idToken) return;
+
+    const parts = idToken.split('.');
+    if (parts.length < 2) return;
+    let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (payload.length % 4) payload += '=';
+    const claims = JSON.parse(Buffer.from(payload, 'base64').toString('utf8'));
+    const email = claims.email;
+    if (!email) return;
+
+    if (!fs.existsSync(OAUTH_DIR)) return;
+    const existingFiles = fs.readdirSync(OAUTH_DIR);
+
+    // Nếu proxy đã tự sinh file chuẩn (dạng codex-<hash>-<email>-<plan>.json), tự dọn dẹp file codex-<email>.json cũ
+    const plainFile = path.join(OAUTH_DIR, `codex-${email}.json`);
+    const hasProxyFile = existingFiles.some(f => f.startsWith('codex-') && f !== `codex-${email}.json` && f.toLowerCase().includes(email.toLowerCase()));
+    if (hasProxyFile && fs.existsSync(plainFile)) {
+      try { fs.unlinkSync(plainFile); } catch {}
+      return;
+    }
+
+    // Nếu đã có bất kỳ file nào chứa email này, không tạo thêm
+    const alreadyExists = existingFiles.some(f => f.toLowerCase().includes(email.toLowerCase()));
+    if (alreadyExists) return;
+
+    const targetFile = plainFile;
+    const cpaData = {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      id_token: idToken,
+      token_type: 'Bearer',
+      account_id: tokens.account_id,
+      email,
+      type: 'codex',
+      provider: 'codex',
+      plan_type: claims['https://api.openai.com/auth']?.chatgpt_plan_type || 'plus',
+      user_id: claims['https://api.openai.com/auth']?.user_id,
+      expired: claims.exp ? new Date(claims.exp * 1000).toISOString() : null,
+      expires_in: 3600,
+      timestamp: Date.now()
+    };
+    fs.writeFileSync(targetFile, JSON.stringify(cpaData, null, 2), 'utf8');
+    console.log(`✅ Đã tự động đồng bộ tài khoản Codex: ${email}`);
+  } catch (e) {
+    console.error('Lỗi syncExistingCodexAuth:', e.message);
+  }
+}
+
 // Lấy danh sách file OAuth
 async function getAuthFiles() {
+  syncExistingCodexAuth();
   const secretKey = getManagementKey();
   try {
     const res = await fetch(`http://${PROXY_HOST}:${PROXY_PORT}/v0/management/auth-files`, {
@@ -300,6 +375,269 @@ async function refreshOAuthToken(content, filePath) {
   });
 }
 
+// Tự động làm mới OAuth Token cho Codex khi hết hạn
+async function refreshCodexOAuthToken(content, filePath) {
+  if (!content.refresh_token) return null;
+  return new Promise((resolve) => {
+    const postData = JSON.stringify({
+      client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+      grant_type: "refresh_token",
+      refresh_token: content.refresh_token
+    });
+
+    const req = https.request("https://auth.openai.com/oauth/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(postData)
+      },
+      timeout: 10000
+    }, (res) => {
+      let data = "";
+      res.on("data", c => data += c);
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.access_token) {
+            content.access_token = json.access_token;
+            if (json.refresh_token) content.refresh_token = json.refresh_token;
+            if (json.id_token) content.id_token = json.id_token;
+            content.expired = new Date(Date.now() + (json.expires_in || 3600) * 1000).toISOString();
+            content.timestamp = Date.now();
+            try { fs.writeFileSync(filePath, JSON.stringify(content, null, 2), 'utf8'); } catch (e) {}
+            resolve(json.access_token);
+            return;
+          }
+        } catch (e) {}
+        resolve(null);
+      });
+    });
+    req.on("error", () => resolve(null));
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Truy vấn Quota chi tiết từ OpenAI Codex API (/backend-api/wham/usage)
+async function fetchQuotaForCodex(file) {
+  const filePath = path.join(OAUTH_DIR, file.name);
+  if (!fs.existsSync(filePath)) {
+    return { status: 'error', error: 'File xác thực không tồn tại' };
+  }
+
+  let content = {};
+  try { content = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return { status: 'error', error: 'Lỗi đọc file json' }; }
+
+  let token = content.access_token;
+  const accountId = content.account_id;
+  const email = (content.email || file.name.replace(/^codex-|\.json$/g, '')).toLowerCase().trim();
+
+  const makeReq = (bearerToken) => new Promise((resolve) => {
+    const headers = {
+      'Authorization': 'Bearer ' + bearerToken,
+      'User-Agent': 'Codex Desktop',
+      'Accept': 'application/json'
+    };
+    if (accountId) headers['ChatGPT-Account-ID'] = accountId;
+
+    const req = https.request('https://chatgpt.com/backend-api/wham/usage', {
+      method: 'GET',
+      headers,
+      timeout: 8000
+    }, (res) => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try {
+          resolve({ status: res.statusCode, data: JSON.parse(d) });
+        } catch (e) {
+          resolve({ status: res.statusCode, data: null });
+        }
+      });
+    });
+    req.on('error', (err) => resolve({ status: 500, error: err.message }));
+    req.end();
+  });
+
+  let res = await makeReq(token);
+  if (res.status === 401 && content.refresh_token) {
+    token = await refreshCodexOAuthToken(content, filePath);
+    if (token) res = await makeReq(token);
+  }
+
+  if (res.status !== 200 || !res.data) {
+    return { status: 'error', error: res.data?.detail || res.error || `HTTP ${res.status}` };
+  }
+
+  const data = res.data;
+  const rateLimit = data.rate_limit || {};
+  const primary = rateLimit.primary_window || {};
+  const secondary = rateLimit.secondary_window || {};
+
+  const fiveHourUsed = primary.used_percent !== undefined ? primary.used_percent : 0;
+  const fiveHourRem = Math.max(0, 100 - fiveHourUsed);
+  const fiveHourReset = primary.reset_at ? new Date(primary.reset_at * 1000).toISOString() : null;
+
+  const weeklyUsed = secondary.used_percent !== undefined ? secondary.used_percent : 0;
+  const weeklyRem = Math.max(0, 100 - weeklyUsed);
+  const weeklyReset = secondary.reset_at ? new Date(secondary.reset_at * 1000).toISOString() : null;
+
+  updateSnapshot(email, {
+    weeklyRem,
+    weeklyReset,
+    weeklyDesc: weeklyReset ? 'Hồi phục hạn mức tuần Codex' : 'Đã sẵn sàng'
+  });
+
+  const planType = (data.plan_type || content.plan_type || 'plus').toUpperCase();
+  const creditsBalance = data.credits?.balance || '0';
+
+  return {
+    status: 'ok',
+    plan: planType,
+    credits: creditsBalance,
+    groups: [
+      {
+        name: 'Codex Models',
+        description: `Gói: ${planType} | Credit: ${creditsBalance} credit`,
+        buckets: [
+          {
+            bucketId: 'codex-5h',
+            label: 'Giới Hạn 5 Giờ (Codex)',
+            window: '5h',
+            remainingPercent: fiveHourRem,
+            usedPercent: fiveHourUsed,
+            resetTime: fiveHourReset,
+            description: fiveHourReset ? 'Thời gian hồi phục 5 giờ' : 'Đang đầy'
+          },
+          {
+            bucketId: 'codex-weekly',
+            label: 'Giới Hạn Hằng Tuần (Codex)',
+            window: 'weekly',
+            remainingPercent: weeklyRem,
+            usedPercent: weeklyUsed,
+            resetTime: weeklyReset,
+            description: weeklyReset ? 'Thời gian hồi phục tuần' : 'Đang đầy'
+          }
+        ]
+      }
+    ]
+  };
+}
+
+// Đọc cache mức sử dụng thực tế của ứng dụng Grok Bot trên macOS
+function readGrokBotUsageFromSystem() {
+  const baseDir = path.join(HOME_DIR, 'Library', 'Application Support', 'Grok Bot', 'sand-client-persistence');
+  if (!fs.existsSync(baseDir)) return null;
+
+  try {
+    const files = fs.readdirSync(baseDir);
+    let latestData = null;
+    let latestMtime = 0;
+
+    for (const f of files) {
+      if (!f.endsWith('.blob')) continue;
+      const fullPath = path.join(baseDir, f);
+      try {
+        const content = fs.readFileSync(fullPath, 'utf8');
+        if (content.includes('percentUsed') && content.includes('nextResetMs')) {
+          const json = JSON.parse(content);
+          const reading = json?.value?.reading;
+          if (reading?.usage) {
+            const stat = fs.statSync(fullPath);
+            if (stat.mtimeMs > latestMtime) {
+              latestMtime = stat.mtimeMs;
+              latestData = {
+                percentUsed: reading.usage.percentUsed,
+                nextResetMs: reading.usage.nextResetMs,
+                readAtMs: reading.readAtMs,
+                plan: reading.usage.unifiedPlanName || reading.usage.grokPlanLabel || 'Premium'
+              };
+            }
+          }
+        }
+      } catch {}
+    }
+    return latestData;
+  } catch (e) {
+    console.error('Lỗi đọc Grok Bot cache:', e.message);
+    return null;
+  }
+}
+
+// Hạn mức và trạng thái tài khoản xAI Grok
+async function fetchQuotaForXAI(file) {
+  const filePath = path.join(OAUTH_DIR, file.name);
+  let content = {};
+  if (fs.existsSync(filePath)) {
+    try { content = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch {}
+  }
+
+  const hasToken = !!(content.access_token || content.token || file.access_token);
+  const email = (content.email || file.email || file.name.replace(/^xai-|\.json$/g, '')).toLowerCase().trim();
+
+  // Đọc mức sử dụng thực tế từ cache của Grok Bot
+  const grokUsage = readGrokBotUsageFromSystem();
+
+  let usedPercent = 0;
+  let remainingPercent = 100;
+  let resetTime = null;
+  let planType = content.plan_type || content.plan || 'Premium';
+
+  if (grokUsage) {
+    const rawUsed = grokUsage.percentUsed || 0;
+    usedPercent = Math.round(rawUsed);
+    remainingPercent = Math.max(0, 100 - usedPercent);
+    if (grokUsage.nextResetMs) {
+      resetTime = new Date(grokUsage.nextResetMs).toISOString();
+    }
+    if (grokUsage.plan) {
+      planType = grokUsage.plan;
+    }
+  }
+
+  const daysLeft = resetTime ? Math.max(1, Math.round((new Date(resetTime) - Date.now()) / (1000 * 60 * 60 * 24))) : 7;
+  
+  // Lưu snapshot hạn mức tuần riêng biệt cho Grok (dùng prefix grok: để tránh xung đột với Antigravity)
+  updateSnapshot(`grok:${email}`, {
+    weeklyRem: remainingPercent,
+    weeklyReset: resetTime,
+    weeklyDesc: resetTime ? `Đặt lại sau ${daysLeft} ngày` : 'Đã sẵn sàng'
+  });
+
+  return {
+    status: hasToken ? 'ok' : 'error',
+    error: hasToken ? null : 'Không tìm thấy access token xAI hợp lệ',
+    plan: planType,
+    usedPercent,
+    groups: [
+      {
+        name: 'Grok Bot Models',
+        description: `Gói: ${planType} | Mô hình: Grok 4.5, 4.3, Grok Vision, Grok Code`,
+        buckets: [
+          {
+            bucketId: 'grok-main',
+            label: `Hạn Mức Grok (${planType})`,
+            window: '5h',
+            remainingPercent,
+            usedPercent,
+            resetTime,
+            description: resetTime ? `Đặt lại sau ${daysLeft} ngày` : 'Sẵn sàng'
+          },
+          {
+            bucketId: 'grok-weekly',
+            label: 'Hạn Mức Chu Kỳ (Grok)',
+            window: 'weekly',
+            remainingPercent,
+            usedPercent,
+            resetTime,
+            description: resetTime ? `Đặt lại sau ${daysLeft} ngày` : 'Đã sẵn sàng'
+          }
+        ]
+      }
+    ]
+  };
+}
+
 // Lấy Quota trực tiếp từ Google Antigravity Internal Backend (daily-cloudcode-pa)
 async function fetchDailyQuotaDirect(file) {
   const filePath = path.join(OAUTH_DIR, file.name);
@@ -405,27 +743,6 @@ async function fetchDailyQuotaDirect(file) {
       buckets: geminiBuckets
     }
   ];
-
-  if (summaryRes.data?.groups) {
-    for (const g of summaryRes.data.groups) {
-      if (!g.displayName?.toLowerCase().includes('gemini')) {
-        const rawBuckets = g.buckets || [];
-        const buckets = rawBuckets.map(b => ({
-          bucketId: b.bucketId || b.window,
-          label: b.displayName || b.window,
-          window: b.window,
-          remainingPercent: b.remainingFraction !== undefined ? Math.round(Number(b.remainingFraction) * 100) : 100,
-          usedPercent: b.remainingFraction !== undefined ? 100 - Math.round(Number(b.remainingFraction) * 100) : 0,
-          resetTime: b.resetTime || null
-        }));
-        groups.push({
-          name: g.displayName || 'Claude and GPT models',
-          description: g.description || '',
-          buckets
-        });
-      }
-    }
-  }
 
   return { status: 'ok', groups };
 }
@@ -537,6 +854,8 @@ function parseAntigravityQuota(raw) {
 
     for (const g of rawGroups) {
       const groupName = g.display_name || g.displayName || 'Gemini Models';
+      // Chỉ theo dõi nhóm Gemini Models
+      if (!groupName.toLowerCase().includes('gemini')) continue;
       const groupDesc = g.description || '';
       const rawBuckets = g.buckets || [];
       const buckets = [];
@@ -600,10 +919,23 @@ const server = http.createServer(async (req, res) => {
     } catch {}
 
     const authFiles = await getAuthFiles();
-    const antigravityAccounts = authFiles.filter(f => {
-      const p = (f.provider || f.type || f.name || '').toLowerCase();
-      return p.includes('antigravity') || p.includes('anti-gravity') || p.includes('gemini');
-    });
+    const uniqueFiles = [];
+    const seenFiles = new Set();
+    for (const f of authFiles) {
+      const raw = (f.provider || f.type || f.name || '').toLowerCase();
+      let p = 'antigravity';
+      if (raw.includes('codex')) p = 'codex';
+      else if (raw.includes('xai') || raw.includes('grok')) p = 'grok';
+      const email = (f.email || f.name || '').toLowerCase().replace(/^(antigravity|codex|xai|grok)-|\.json$/g, '').trim();
+      const key = `${p}:${email}`;
+      if (!seenFiles.has(key)) {
+        seenFiles.add(key);
+        uniqueFiles.push({ ...f, provider: p });
+      }
+    }
+    const antigravityAccounts = uniqueFiles.filter(f => f.provider === 'antigravity');
+    const codexAccounts = uniqueFiles.filter(f => f.provider === 'codex');
+    const grokAccounts = uniqueFiles.filter(f => f.provider === 'grok');
 
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({
@@ -613,7 +945,10 @@ const server = http.createServer(async (req, res) => {
         running: isProxyRunning,
         endpoint: `http://${PROXY_HOST}:${PROXY_PORT}/v1`
       },
-      accountCount: antigravityAccounts.length
+      accountCount: uniqueFiles.length,
+      antigravityCount: antigravityAccounts.length,
+      codexCount: codexAccounts.length,
+      grokCount: grokAccounts.length
     }));
     return;
   }
@@ -624,12 +959,15 @@ const server = http.createServer(async (req, res) => {
     const authFiles = await getAuthFiles();
     const liveMap = await getLiveIdeQuotas();
     const accounts = await Promise.all(authFiles.map(async (f) => {
-      const isAntigravity = (f.provider || f.type || f.name || '').toLowerCase().includes('antigravity');
+      const raw = (f.provider || f.type || f.name || '').toLowerCase();
+      const isCodex = raw.includes('codex');
+      const isGrok = raw.includes('xai') || raw.includes('grok');
+      const isAntigravity = !isCodex && !isGrok;
       let quotaData = { status: 'loading' };
 
       // Đọc thông tin chi tiết từ file cục bộ
       let email = f.email || f.account || '';
-      let plan = f.plan_type || f.plan || 'Gemini Pro';
+      let plan = f.plan_type || f.plan || (isCodex ? 'Plus' : isGrok ? 'xAI Grok' : 'Gemini Pro');
       let projectId = f.project_id || f.projectId || '';
 
       const localFilePath = path.join(OAUTH_DIR, f.name);
@@ -638,26 +976,43 @@ const server = http.createServer(async (req, res) => {
           const content = JSON.parse(fs.readFileSync(localFilePath, 'utf8'));
           email = email || content.email || content.account || content.user_email || '';
           projectId = projectId || content.project_id || content.projectId || '';
+          plan = content.plan_type || content.plan || plan;
         } catch {}
       }
 
       if (isAntigravity) {
         quotaData = await fetchQuotaForAccount(f, liveMap);
+      } else if (isCodex) {
+        quotaData = await fetchQuotaForCodex(f);
+      } else if (isGrok) {
+        quotaData = await fetchQuotaForXAI(f);
       }
 
+      const finalPlan = (quotaData && quotaData.plan) || plan || (isCodex ? 'PLUS' : isGrok ? 'PREMIUM' : 'GEMINI PRO');
       return {
         name: f.name,
         email: email || f.name.replace(/\.json$/, ''),
-        provider: f.provider || 'antigravity',
-        plan,
+        provider: isCodex ? 'codex' : isGrok ? 'grok' : 'antigravity',
+        plan: finalPlan.toUpperCase(),
         projectId,
         updatedAt: f.updated_at || null,
         quota: quotaData
       };
     }));
 
+    // Deduplicate theo provider + email (tránh trường hợp có 2 file oauth cùng một email)
+    const uniqueAccounts = [];
+    const seen = new Set();
+    for (const acc of accounts) {
+      const key = `${acc.provider}:${(acc.email || '').toLowerCase().trim()}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueAccounts.push(acc);
+      }
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ accounts }));
+    res.end(JSON.stringify({ accounts: uniqueAccounts }));
     return;
   }
 
@@ -680,6 +1035,89 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ success: false, error: data.error || 'Không lấy được URL OAuth' }));
       }
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: e.message }));
+    }
+    return;
+  }
+
+  // API: Bắt đầu đăng nhập tài khoản Codex mới (OpenAI OAuth)
+  if (url.pathname === '/api/login-codex' && req.method === 'POST') {
+    await ensureCoreRunning();
+    const secretKey = getManagementKey();
+    try {
+      const targetUrl = `http://${PROXY_HOST}:${PROXY_PORT}/v0/management/codex-auth-url?is_webui=true`;
+      const response = await fetch(targetUrl, {
+        headers: { Authorization: `Bearer ${secretKey}` }
+      });
+      const data = await response.json();
+      if (data.url) {
+        exec(`open "${data.url}"`);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, url: data.url, state: data.state }));
+      } else {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: data.error || 'Không lấy được URL OAuth Codex' }));
+      }
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: e.message }));
+    }
+    return;
+  }
+
+  // API: Bắt đầu đăng nhập tài khoản xAI Grok mới (OAuth Device Flow)
+  if (url.pathname === '/api/login-xai' && req.method === 'POST') {
+    await ensureCoreRunning();
+    try {
+      if (activeXaiProcess) {
+        try { activeXaiProcess.kill(); } catch {}
+        activeXaiProcess = null;
+      }
+
+      const child = spawn(CORE_BINARY, ['-config', CORE_CONFIG, '-xai-login', '-no-browser'], {
+        cwd: path.dirname(CORE_BINARY)
+      });
+      activeXaiProcess = child;
+
+      let captured = '';
+      let responded = false;
+
+      const timer = setTimeout(() => {
+        if (!responded) {
+          responded = true;
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'Quá thời gian khởi tạo xác thực xAI Grok' }));
+        }
+      }, 10000);
+
+      const checkOutput = (data) => {
+        captured += data.toString();
+        const urlMatch = captured.match(/(https:\/\/accounts\.x\.ai\/oauth2\/device\S*)/);
+        const codeMatch = captured.match(/enter this code:\s*([A-Z0-9-]+)/i);
+        if (urlMatch && !responded) {
+          responded = true;
+          clearTimeout(timer);
+          const deviceUrl = urlMatch[1];
+          const userCode = codeMatch ? codeMatch[1] : (deviceUrl.match(/user_code=([A-Z0-9-]+)/) || [])[1] || '';
+          exec(`open "${deviceUrl}"`);
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({
+            success: true,
+            url: deviceUrl,
+            user_code: userCode,
+            provider: 'xai'
+          }));
+        }
+      };
+
+      child.stdout.on('data', checkOutput);
+      child.stderr.on('data', checkOutput);
+
+      child.on('exit', () => {
+        activeXaiProcess = null;
+      });
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ success: false, error: e.message }));
