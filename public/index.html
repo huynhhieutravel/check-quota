@@ -503,9 +503,23 @@
 
     .card-top {
       display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .card-header-main {
+      display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
+    }
+
+    .card-header-left {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      flex: 1;
     }
 
     .user-email {
@@ -520,11 +534,11 @@
       line-height: 1.2;
     }
 
-    .card-top-badges {
+    .card-badges-row {
       display: flex;
       align-items: center;
       gap: 4px;
-      flex-shrink: 0;
+      flex-wrap: wrap;
     }
 
     .provider-pill {
@@ -1449,19 +1463,25 @@
       container.innerHTML = processedAccounts.map(acc => {
         return `
           <div class="${acc.cardClass} ${acc.isWeeklyRestricted ? 'card-restricted' : ''} ${acc.isSelected ? 'is-selected' : ''}" onclick="toggleSelectAccount('${acc.uniqueKey}', event)">
-            <!-- Card Top: Checkbox Chọn + Email + Badge -->
+            <!-- Card Top: Checkbox Chọn + Email (hàng 1) + Badges (hàng 2 nếu có) -->
             <div class="card-top">
-              <div class="card-select-btn ${acc.isSelected ? 'checked' : ''}" title="${acc.isSelected ? 'Bấm để bỏ chọn' : 'Bấm để đánh dấu đang dùng'}">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-              <div class="user-email" title="${acc.email}">${acc.email}</div>
-              <div class="card-top-badges">
-                ${acc.isSelected ? '<span class="in-use-badge">⭐ ĐANG DÙNG</span>' : ''}
+              <div class="card-header-main">
+                <div class="card-header-left">
+                  <div class="card-select-btn ${acc.isSelected ? 'checked' : ''}" title="${acc.isSelected ? 'Bấm để bỏ chọn' : 'Bấm để đánh dấu đang dùng'}">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  </div>
+                  <div class="user-email" title="${acc.email}">${acc.email}</div>
+                </div>
                 ${acc.providerBadge}
-                ${acc.statusBadge}
               </div>
+              ${(acc.isSelected || acc.statusBadge) ? `
+                <div class="card-badges-row">
+                  ${acc.isSelected ? '<span class="in-use-badge">⭐ ĐANG DÙNG</span>' : ''}
+                  ${acc.statusBadge}
+                </div>
+              ` : ''}
             </div>
 
             ${acc.isError ? `

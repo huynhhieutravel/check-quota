@@ -177,9 +177,46 @@ function syncExistingCodexAuth() {
   }
 }
 
+// Tự động nhận diện và đồng bộ tài khoản Antigravity IDE từ ~/.gemini/jetski-standalone-oauth-token
+function syncExistingAntigravityIdeAuth() {
+  try {
+    const tokenPath = path.join(HOME_DIR, '.gemini', 'jetski-standalone-oauth-token');
+    if (!fs.existsSync(tokenPath)) return;
+    const data = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+    const email = (data.id_token_email || '').toLowerCase().trim();
+    if (!email) return;
+
+    if (!fs.existsSync(OAUTH_DIR)) return;
+    const existingFiles = fs.readdirSync(OAUTH_DIR);
+    const targetFile = path.join(OAUTH_DIR, `antigravity-${email}.json`);
+
+    // Nếu chưa có file cho email này, tự động đồng bộ
+    if (!existingFiles.some(f => f.startsWith('antigravity-') && f.toLowerCase().includes(email))) {
+      const token = data.token || {};
+      const fileData = {
+        access_token: token.access_token || '',
+        refresh_token: token.refresh_token || '',
+        token_type: token.token_type || 'Bearer',
+        email,
+        account: email,
+        type: 'antigravity',
+        provider: 'antigravity',
+        plan_type: 'Pro',
+        expires_in: token.expires_in || 3600,
+        timestamp: Date.now()
+      };
+      fs.writeFileSync(targetFile, JSON.stringify(fileData, null, 2), 'utf8');
+      console.log(`✅ Đã tự động đồng bộ tài khoản Antigravity IDE: ${email}`);
+    }
+  } catch (e) {
+    console.error('Lỗi syncExistingAntigravityIdeAuth:', e.message);
+  }
+}
+
 // Lấy danh sách file OAuth
 async function getAuthFiles() {
   syncExistingCodexAuth();
+  syncExistingAntigravityIdeAuth();
   const secretKey = getManagementKey();
   try {
     const res = await fetch(`http://${PROXY_HOST}:${PROXY_PORT}/v0/management/auth-files`, {
@@ -232,29 +269,30 @@ async function getLiveIdeQuotas() {
 
   const freshMap = new Map();
   try {
-    const ps = execSync("ps aux | grep language_server_macos_arm | grep -v grep", { encoding: "utf8" });
-    for (const line of ps.trim().split("\n")) {
+    const ps = execSync("ps aux", { encoding: "utf8" });
+    const lines = ps.split("\n").filter(l => (l.includes("language_server") || l.includes("bin/agy") || l.includes("agy --hub")) && l.includes("--csrf_token"));
+
+    for (const line of lines) {
       const pidMatch = line.trim().match(/^\S+\s+(\d+)/);
-      const csrfMatch = line.match(/--csrf_token\s+([a-f0-9\-]+)/);
+      const csrfMatch = line.match(/--csrf_token[=\s]+([a-f0-9\-]+)/);
       if (!pidMatch || !csrfMatch) continue;
 
       const pid = pidMatch[1];
       const csrf = csrfMatch[1];
 
-      // Tối ưu: Nếu có cờ --https_server_port, ưu tiên kết nối thẳng không cần lsof
-      const httpsPortMatch = line.match(/--https_server_port\s+(\d+)/);
       let ports = [];
+      const httpsPortMatch = line.match(/--https_server_port[=\s]+(\d+)/);
       if (httpsPortMatch) {
         ports.push(httpsPortMatch[1]);
-      } else {
-        // Fallback lsof chỉ khi không tìm thấy cờ
-        try {
-          const lsof = execSync(`lsof -Pan -p ${pid} -i`, { encoding: "utf8" });
-          for (const l of lsof.split("\n")) {
-            const m = l.match(/TCP (?:127\.0\.0\.1|localhost):(\d+) \(LISTEN\)/);
-            if (m && !ports.includes(m[1])) ports.push(m[1]);
-          }
-        } catch { continue; }
+      }
+      try {
+        const lsof = execSync(`lsof -Pan -p ${pid} -i`, { encoding: "utf8" });
+        for (const l of lsof.split("\n")) {
+          const m = l.match(/TCP (?:127\.0\.0\.1|localhost):(\d+) \(LISTEN\)/);
+          if (m && !ports.includes(m[1])) ports.push(m[1]);
+        }
+      } catch {
+        if (ports.length === 0) continue;
       }
 
       for (const port of ports) {
@@ -279,6 +317,7 @@ async function getLiveIdeQuotas() {
                   weeklyDesc: weeklyBucket.description || ''
                 });
               }
+              break; // Đã kết nối thành công với tiến trình này
             }
           }
         } catch (e) {}
@@ -750,12 +789,13 @@ async function fetchDailyQuotaDirect(file) {
 // Truy vấn Quota chi tiết của từng tài khoản Antigravity
 async function fetchQuotaForAccount(file, liveMap = null) {
   const targetEmail = (file.email || file.account || file.name || '').toLowerCase().trim();
+  const cleanTarget = targetEmail.replace(/^antigravity-|\.json$/g, '').trim();
 
   // 1. Ưu tiên số 1: Hạn mức từ Antigravity LanguageServer đang chạy trên máy (khớp 100% tất cả workspace IDE)
   try {
     const map = liveMap || await getLiveIdeQuotas();
     for (const [ideEmail, ideQuota] of map) {
-      if (targetEmail.includes(ideEmail) || ideEmail.includes(targetEmail.replace(/^antigravity-|\.json$/g, ''))) {
+      if (cleanTarget === ideEmail || cleanTarget.includes(ideEmail) || ideEmail.includes(cleanTarget)) {
         return ideQuota;
       }
     }
